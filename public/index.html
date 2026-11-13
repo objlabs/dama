@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dama · 내 서버의 운영 공간</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Dama 홈"><span class="brand-icon">d.</span>dama<span class="alpha">alpha</span></a>
+    <div class="workspace"><span class="workspace-icon">W</span><div>내 워크스페이스<small>Personal workspace</small></div></div>
+    <span class="nav-label">WORKSPACE</span>
+    <nav aria-label="메인 메뉴">
+      <button data-view="overview" class="active"><span>◈</span>개요</button>
+      <button data-view="projects"><span>▦</span>프로젝트 <b id="nav-projects">0</b></button>
+      <button data-view="services"><span>▤</span>서비스 <b id="nav-services">0</b></button>
+      <button data-view="mcps"><span>⌘</span>MCP 레지스트리 <b id="nav-mcps">0</b></button>
+      <button data-view="connections"><span>⇄</span>연결 관리</button>
+      <button data-view="activity"><span>◷</span>활동 기록</button>
+    </nav>
+    <div class="sidebar-bottom"><span class="dot"></span> 로컬 개발 모드<small>내 인프라. 내 운영 공간.</small></div>
+  </aside>
+  <div class="page">
+    <header><span>내 워크스페이스 <span class="slash">/</span> <strong id="breadcrumb">개요</strong></span><span class="header-status"><span class="dot"></span> Control plane · v0.1</span></header>
+    <main>
+      <div class="heading"><div><span class="eyebrow">YOUR INFRASTRUCTURE, TOGETHER</span><h1 id="page-title">운영 공간을 한눈에.</h1><p id="page-description">프로젝트와 MCP를 모으고, 필요한 곳에 연결하세요.</p></div><div class="actions"><button class="button secondary" data-open="mcp">MCP 등록</button><button class="button primary" data-open="project">＋ 프로젝트 추가</button></div></div>
+      <div class="notice"><span>ⓘ</span><p>배포 작업을 등록하면 같은 데이터베이스에 연결된 배포 워커가 처리합니다.</p></div>
+      <div id="error" role="alert" hidden></div>
+      <div id="content" aria-live="polite"><p>워크스페이스를 불러오는 중…</p></div>
+      <footer>DAMA / SELF-HOSTED OPERATIONS <span>Built for your own infrastructure.</span></footer>
+    </main>
+  </div>
+  <dialog id="editor">
+    <form id="editor-form">
+      <div class="dialog-heading"><h2 id="dialog-title"></h2><button type="button" class="icon-button" id="close-dialog" aria-label="닫기">×</button></div>
+      <div id="form-fields"></div>
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="button secondary" id="cancel-dialog">취소</button><button type="submit" class="button primary" id="submit-dialog">등록하기</button></div>
+    </form>
+  </dialog>
+  <dialog id="plan-dialog" aria-labelledby="plan-title">
+    <div class="dialog-heading"><h2 id="plan-title">배포 계획 미리보기</h2><button type="button" class="icon-button" id="close-plan" aria-label="배포 계획 닫기">×</button></div>
+    <pre id="plan-output"></pre>
+    <div class="dialog-actions"><button type="button" class="button secondary" id="download-plan">JSON 내려받기</button></div>
+    <form id="queue-build-form" hidden>
+      <label>Git 커밋 SHA <input name="commitSha" required pattern="[a-fA-F0-9]{40}" maxlength="40" spellcheck="false" aria-describedby="queue-build-note"></label>
+      <p class="field-note" id="queue-build-note">배포할 커밋의 40자리 SHA를 입력하세요.</p>
+      <p class="form-error" id="queue-build-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="submit" class="button primary" id="queue-build-submit">배포 작업 등록</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

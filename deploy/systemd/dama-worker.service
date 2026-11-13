@@ -1,0 +1,23 @@
+[Unit]
+Description=Dama deployment worker and startup recovery
+Wants=docker.service nginx.service dama.service
+After=docker.service nginx.service dama.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=dama
+Group=dama
+SupplementaryGroups=docker
+WorkingDirectory=/opt/dama
+StateDirectory=dama
+EnvironmentFile=/etc/dama/dama.env
+Environment=PATH=/usr/local/libexec/dama:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/flock --no-fork --nonblock /var/lib/dama/worker.lock /usr/bin/node --experimental-sqlite /opt/dama/dist/src/run-deployments.js --boot-watch
+Restart=on-failure
+RestartSec=10s
+KillMode=mixed
+TimeoutStopSec=20min
+
+[Install]
+WantedBy=multi-user.target

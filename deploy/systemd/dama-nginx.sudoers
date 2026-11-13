@@ -1,0 +1,1 @@
+dama ALL=(root) NOPASSWD: /usr/sbin/nginx -c /etc/nginx/nginx.conf -t, /usr/sbin/nginx -c /etc/nginx/nginx.conf -s reload

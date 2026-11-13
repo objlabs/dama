@@ -1,0 +1,9 @@
+FROM python:3.13-slim
+WORKDIR /workspace
+COPY . .
+WORKDIR /workspace/apps/python-api
+ARG DAMA_BASE_PATH=""
+ENV DAMA_BASE_PATH=$DAMA_BASE_PATH PORT=8000 PYTHONUNBUFFERED=1
+USER 10001:10001
+EXPOSE 8000
+CMD ["python", "server.py"]

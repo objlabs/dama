@@ -1,0 +1,38 @@
+# Managed by the Dama installer.
+map $http_upgrade $dama_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name apps.objlabs.team;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/dama-acme;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://apps.objlabs.team$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name apps.objlabs.team;
+
+    ssl_certificate "@CERTIFICATE@";
+    ssl_certificate_key "@PRIVATE_KEY@";
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    include /etc/nginx/dama/routes.conf;
+
+    location = /_dama/ready {
+        return 200 "dama-nginx-ready";
+    }
+
+    location / {
+        return 404;
+    }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "dama-example-typescript-api",
+  "private": true,
+  "scripts": { "build": "tsc", "start": "node dist/server.js" },
+  "devDependencies": { "typescript": "5.7.3", "@types/node": "22.10.2" }
+}

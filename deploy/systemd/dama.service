@@ -1,0 +1,18 @@
+[Unit]
+Description=Dama local dashboard
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User=dama
+Group=dama
+WorkingDirectory=/opt/dama
+StateDirectory=dama
+EnvironmentFile=/etc/dama/dama.env
+ExecStart=/usr/bin/node --experimental-sqlite /opt/dama/dist/src/server.js
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+{
+  "tls": {
+    "certificate": "/etc/nginx/ssl/objlabs.team-chain.pem",
+    "privateKey": "/etc/nginx/ssl/objlabs.team-key.pem"
+  },
+  "routes": [
+    { "projectId": "00000000-0000-4000-8000-000000000001", "routeSegment": "", "upstreamPort": 32780 },
+    { "projectId": "00000000-0000-4000-8000-000000000001", "routeSegment": "api", "upstreamPort": 32781 },
+    { "projectId": "00000000-0000-4000-8000-000000000001", "routeSegment": "tools", "upstreamPort": 32782 }
+  ]
+}
