@@ -12,6 +12,7 @@ Install Dama on a Debian or Ubuntu systemd VM for apps.objlabs.team.
   --route53 EMAIL       Issue the wildcard certificate if needed, then
                         enable daily renewal. Requires root Route 53 credentials.
   --certbot-renewal     Enable daily renewal for an existing Certbot certificate.
+  --accept-acme-terms   Accept ACME terms and issue without interactive prompts.
   --help                Show these instructions.
 HELP
 }
@@ -22,6 +23,7 @@ log() { printf '\n[Dama] %s\n' "$*"; }
 cert_dir=/etc/letsencrypt/live/objlabs.team
 route53_email=
 renew=false
+acme_arguments=()
 while (($#)); do
     case "$1" in
         --help|-h) usage; exit 0 ;;
@@ -37,6 +39,7 @@ while (($#)); do
             shift 2
             ;;
         --certbot-renewal) renew=true; shift ;;
+        --accept-acme-terms) acme_arguments=(--agree-tos --non-interactive); shift ;;
         *) fail "Unknown option $1. See --help." ;;
     esac
 done
@@ -180,7 +183,7 @@ if [[ ! -e "$site" ]] &&
     fail "An existing Nginx server already owns $host. Use the guide to connect it."
 fi
 if [[ -n "$route53_email" && ( ! -s "$cert_dir/fullchain.pem" || ! -s "$cert_dir/privkey.pem" ) ]]; then
-    certbot certonly --dns-route53 --cert-name objlabs.team --email "$route53_email" -d '*.objlabs.team'
+    certbot certonly --dns-route53 --cert-name objlabs.team --email "$route53_email" -d '*.objlabs.team' "${acme_arguments[@]}"
 fi
 [[ -s "$cert_dir/fullchain.pem" && -s "$cert_dir/privkey.pem" ]] || fail "Certificate and key required in $cert_dir. See --route53."
 openssl x509 -in "$cert_dir/fullchain.pem" -noout -checkend 0 -checkhost "$host"

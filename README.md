@@ -6,6 +6,12 @@
 
 ## 실행
 
+Windows에서 WSL 준비부터 시작하려면 Dama 저장소의 관리자 PowerShell에서 다음 명령을 실행합니다. 기존 인증서 폴더를 입력하면 WSL 2, Dama 전용 Ubuntu, systemd와 Linux 패키지를 준비하고 Dama를 설치·검증합니다. 설치 중 Windows 계정 암호를 한 번 입력해 부팅 작업을 등록합니다. 재부팅이 필요하면 부팅 작업이 설치를 이어가고, 이후에도 로그인 전 WSL과 서비스를 시작하도록 구성합니다. [Windows 자동 설치](docs/windows-wsl-install.md)에 인증서 발급 옵션과 접속 범위를 정리했습니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
+```
+
 새 Linux VM에 운영용으로 설치할 때는 `sudo bash scripts/install-linux-vm.sh`를 사용합니다. 기존 인증서나 Route 53 와일드카드 발급을 연결하는 옵션은 [Linux VM 설치](docs/windows-vm-startup.md)를 확인하세요.
 
 Node.js 22.11 이상이 필요합니다. 서버·브라우저·테스트 소스는 TypeScript이며 TypeScript와 Node 타입 정의를 개발 의존성으로 사용합니다. 실행 코드는 Node 내장 모듈과 SQLite를 사용하고 GitHub Actions는 필요하지 않습니다. Node.js 22의 SQLite 실험적 기능 경고가 표시될 수 있습니다.
@@ -83,7 +89,7 @@ MCP는 Streamable HTTP 연결 메타데이터를 등록합니다. 연결 상태�
 
 ## 배포 워커
 
-서비스의 **배포 계획**에서 커밋 SHA를 등록하면 워커가 Git 체크아웃, Docker 빌드·실행, 상태 확인, Nginx 경로 전환을 처리합니다. Nginx include와 기존 인증서를 연결하는 방법은 [배포 워커 실행](docs/deployment-worker.md)을 참고하세요. Windows 로그인 없이 운영하려면 [Linux VM 자동 시작·복구](docs/windows-vm-startup.md)의 systemd 구성을 사용하세요.
+서비스의 **배포 계획**에서 커밋 SHA를 등록하면 워커가 Git 체크아웃, Docker 빌드·실행, 상태 확인, Nginx 경로 전환을 처리합니다. Nginx include와 기존 인증서를 연결하는 방법은 [배포 워커 실행](docs/deployment-worker.md)을 참고하세요. Windows 부팅 작업은 [WSL 자동 설치](docs/windows-wsl-install.md)에서, Hyper-V 구성은 [Linux VM 자동 시작·복구](docs/windows-vm-startup.md)에서 확인하세요.
 
 ## 다음 단계
 

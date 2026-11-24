@@ -1,5 +1,7 @@
 # Windows 재부팅 후 Dama 자동 복구
 
+WSL 설치와 Linux 준비를 자동화하려면 [Windows 자동 설치](windows-wsl-install.md)를 사용한다. 해당 설치는 배포판 소유 계정의 암호로 부팅 작업을 등록해 로그인 전 WSL과 서비스를 시작하도록 구성한다. 아래 Hyper-V 구성은 로그인 전 서버 복구를 목표로 한다.
+
 Windows 부팅 시 Linux VM을 시작하고 VM 안에서 Docker Engine, Dama 관리 화면, Nginx, Dama 배포 워커를 순서대로 올린다. 로그인이나 터미널 접속 없이 시작하도록 Hyper-V 자동 시작과 Linux systemd를 사용한다.
 
 ```text
