@@ -3,6 +3,8 @@ Unicode true
 !include "x64.nsh"
 
 Name "Dama"
+Icon "Dama.ico"
+UninstallIcon "Dama.ico"
 OutFile "Dama-Setup.exe"
 InstallDir "$PROGRAMFILES64\Dama"
 RequestExecutionLevel admin
@@ -18,16 +20,18 @@ Section "Dama and automatic startup"
     SetOutPath "$INSTDIR"
     File "manage.ps1"
     File "manage.cmd"
+    File "Dama.ico"
     SetOutPath "$INSTDIR\payload"
     File /r "payload\*"
     SetOutPath "$INSTDIR"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dama" "DisplayName" "Dama"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dama" "DisplayIcon" "$INSTDIR\Dama.ico"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dama" "UninstallString" '"$INSTDIR\Uninstall.exe"'
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Dama" "NoModify" 1
     SetShellVarContext all
     CreateDirectory "$SMPROGRAMS\Dama"
-    CreateShortCut "$SMPROGRAMS\Dama\Dama.lnk" "$INSTDIR\manage.cmd"
+    CreateShortCut "$SMPROGRAMS\Dama\Dama.lnk" "$INSTDIR\manage.cmd" "" "$INSTDIR\Dama.ico"
     CreateShortCut "$SMPROGRAMS\Dama\Uninstall Dama.lnk" "$INSTDIR\Uninstall.exe"
     ${DisableX64FSRedirection}
     ClearErrors
@@ -62,6 +66,7 @@ Section "Uninstall"
     RMDir /r "$INSTDIR\payload"
     Delete "$INSTDIR\manage.ps1"
     Delete "$INSTDIR\manage.cmd"
+    Delete "$INSTDIR\Dama.ico"
     Delete "$INSTDIR\Uninstall.exe"
     RMDir "$INSTDIR"
 SectionEnd

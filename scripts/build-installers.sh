@@ -37,6 +37,7 @@ if [[ "$target" == macos || "$target" == all ]]; then
     install -m 0755 deploy/installer/macos/server deploy/installer/macos/manage-service "$resources/"
     install -m 0755 deploy/installer/macos/postinstall "$work/pkg-scripts/"
     cp deploy/installer/macos/Info.plist "$app/Contents/"
+    cp deploy/installer/macos/Dama.icns "$resources/"
     plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
     plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
     install -m 0755 "$node_binary" "$resources/bin/node"
@@ -75,9 +76,10 @@ fi
 
 if [[ "$target" == windows || "$target" == all ]]; then
     stage="$work/windows"
-    mkdir -p "$stage/payload"
-    cp deploy/installer/windows/{setup.nsi,manage.ps1,manage.cmd} "$stage/"
-    cp -R src public scripts test deploy package.json package-lock.json tsconfig*.json LICENSE "$stage/payload/"
+    mkdir -p "$stage/payload/deploy"
+    cp deploy/installer/windows/{setup.nsi,manage.ps1,manage.cmd,Dama.ico} "$stage/"
+    cp -R src public scripts test package.json package-lock.json tsconfig*.json LICENSE "$stage/payload/"
+    cp -R deploy/database deploy/forgejo deploy/nginx deploy/systemd deploy/routes.example.json "$stage/payload/deploy/"
     copy_build "$stage/payload/prebuilt"
     if command -v makensis >/dev/null 2>&1; then
         (cd "$stage" && makensis setup.nsi)

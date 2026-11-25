@@ -16,7 +16,12 @@ import { createForgejo, requireLocalForgejo } from './forgejo.js';
 import { createNginxAdmin } from './nginx-admin.js';
 
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
-const assets: Record<string, readonly [string, string]> = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
+const assets: Record<string, readonly [string, string]> = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/style.css': ['style.css', 'text/css; charset=utf-8'],
+  '/dama-icon.png': ['dama-icon.png', 'image/png']
+};
 async function readJson(req: IncomingMessage): Promise<JsonObject> {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new HttpError(415, 'application/json 요청이 필요합니다.');
   let body = ''; let size = 0;
