@@ -47,6 +47,11 @@ if [[ "$target" == macos || "$target" == all ]]; then
     cp -R deploy/database deploy/forgejo deploy/nginx "$resources/deploy/"
     copy_build "$resources/dist"
     artifact="Dama-$version-mac-$arch.pkg"
+    package="$work/$artifact"
+    if [[ -n "${MAC_NOTARY_PROFILE:-}" && ( -z "${MAC_APP_SIGN_IDENTITY:-}" || -z "${MAC_INSTALLER_SIGN_IDENTITY:-}" ) ]]; then
+        echo 'Notarizing a macOS package requires both Developer ID signing identities.' >&2
+        exit 1
+    fi
     if [[ -n "${MAC_APP_SIGN_IDENTITY:-}" ]]; then
         codesign --force --timestamp --options runtime --entitlements deploy/installer/macos/node.entitlements --sign "$MAC_APP_SIGN_IDENTITY" "$resources/bin/node"
         codesign --force --timestamp --options runtime --sign "$MAC_APP_SIGN_IDENTITY" "$app"
@@ -62,15 +67,26 @@ if [[ "$target" == macos || "$target" == all ]]; then
     if [[ -n "${MAC_INSTALLER_SIGN_IDENTITY:-}" ]]; then
         pkgbuild --root "$root" --component-plist "$components" --install-location / --scripts "$work/pkg-scripts" \
             --identifier com.objlabs.dama --version "$version" --ownership recommended \
-            --sign "$MAC_INSTALLER_SIGN_IDENTITY" "$out/$artifact"
+            --sign "$MAC_INSTALLER_SIGN_IDENTITY" "$package"
+        pkgutil --check-signature "$package"
     else
         pkgbuild --root "$root" --component-plist "$components" --install-location / --scripts "$work/pkg-scripts" \
-            --identifier com.objlabs.dama --version "$version" --ownership recommended "$out/$artifact"
+            --identifier com.objlabs.dama --version "$version" --ownership recommended "$package"
     fi
     if [[ -n "${MAC_NOTARY_PROFILE:-}" ]]; then
-        xcrun notarytool submit "$out/$artifact" --keychain-profile "$MAC_NOTARY_PROFILE" --wait
-        xcrun stapler staple "$out/$artifact"
+        result="$work/notary-result.json"
+        xcrun notarytool submit "$package" --keychain-profile "$MAC_NOTARY_PROFILE" --wait --output-format json > "$result"
+        status=$(node -p 'require(process.argv[1]).status' "$result")
+        printf 'Apple notarization: %s\n' "$status"
+        if [[ "$status" != Accepted ]]; then
+            id=$(node -p 'require(process.argv[1]).id' "$result")
+            xcrun notarytool log "$id" --keychain-profile "$MAC_NOTARY_PROFILE" >&2
+            exit 1
+        fi
+        xcrun stapler staple "$package"
+        xcrun stapler validate "$package"
     fi
+    mv -f "$package" "$out/$artifact"
     hash_file "$artifact"
 fi
 
