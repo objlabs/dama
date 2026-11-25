@@ -1,0 +1,26 @@
+name: dama-db-${DAMA_ENVIRONMENT:?Set DAMA_ENVIRONMENT to dev, test, or release}
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin
+    secrets:
+      - postgres_admin
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: [CMD, pg_isready, -U, postgres]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+networks:
+  database:
+    name: dama-db-${DAMA_ENVIRONMENT}
+volumes:
+  postgres-data:
+secrets:
+  postgres_admin:
+    file: ${DAMA_POSTGRES_PASSWORD_FILE:?Set the environment-specific PostgreSQL admin password file}

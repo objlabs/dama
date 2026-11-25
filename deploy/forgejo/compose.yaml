@@ -1,0 +1,20 @@
+name: dama-forgejo
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:17.0.2
+    restart: unless-stopped
+    environment:
+      USER_UID: ${DAMA_FORGEJO_UID}
+      USER_GID: ${DAMA_FORGEJO_GID}
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:${DAMA_FORGEJO_PORT}/
+      FORGEJO__server__DISABLE_SSH: "true"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+    ports:
+      - "127.0.0.1:${DAMA_FORGEJO_PORT}:3000"
+    volumes:
+      - type: bind
+        source: ${DAMA_FORGEJO_PATH}
+        target: /data
+        bind:
+          create_host_path: false

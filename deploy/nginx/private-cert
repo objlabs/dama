@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+umask 077
+directory=$1
+domain=$2
+issued=$3
+case "$domain" in ''|.*|*[!a-z0-9.-]*|*..*|*.) exit 2 ;; esac
+mkdir -p "$directory"
+scratch=$(mktemp -d "$directory/.issue.XXXXXX")
+trap 'rm -rf -- "$scratch"' EXIT
+if [ ! -f "$directory/ca.pem" ] || [ ! -f "$directory/ca.key" ]; then
+    if [ -e "$directory/ca.pem" ] || [ -e "$directory/ca.key" ]; then exit 1; fi
+    printf '[req]\ndistinguished_name=dn\n[dn]\n[ca]\nbasicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n' > "$scratch/ca.cnf"
+    openssl req -new -x509 -nodes -newkey rsa:3072 -sha256 -days 3650 -subj '/CN=Dama Private CA' \
+        -config "$scratch/ca.cnf" -extensions ca -keyout "$scratch/ca.key" -out "$scratch/ca.pem"
+    mv "$scratch/ca.key" "$directory/ca.key"
+    mv "$scratch/ca.pem" "$directory/ca.pem"
+fi
+case "$domain" in *[!0-9.]*) san="DNS:$domain";; *) san="IP:$domain";; esac
+printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectAltName=%s\n' "$san" > "$scratch/site.cnf"
+openssl req -new -nodes -newkey rsa:2048 -subj '/CN=Dama Managed Site' -keyout "$scratch/privkey.pem" -out "$scratch/site.csr"
+openssl x509 -req -sha256 -days 365 -in "$scratch/site.csr" -CA "$directory/ca.pem" -CAkey "$directory/ca.key" \
+    -set_serial "0x$(openssl rand -hex 16)" -extfile "$scratch/site.cnf" -out "$scratch/fullchain.pem"
+mkdir -p "$issued/$domain"
+# Stage alongside the destination so a rename never exposes a partially written PEM.
+mv "$scratch/fullchain.pem" "$issued/$domain/fullchain.pem"
+mv "$scratch/privkey.pem" "$issued/$domain/privkey.pem"

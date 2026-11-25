@@ -1,0 +1,1 @@
+dama ALL=(root) NOPASSWD: /usr/local/libexec/dama/nginx-admin

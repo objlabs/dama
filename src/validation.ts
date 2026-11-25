@@ -1,4 +1,4 @@
-import type { JsonObject, ProjectInput, McpInput, BindingInput, ServiceInput } from './types.js';
+import type { JsonObject, ProjectInput, McpInput, BindingInput, ServiceInput, ServiceDeployment, DeployEnvironment, SharedKind } from './types.js';
 export class HttpError extends Error {
   readonly status: number;
   constructor(status: number, message: string) { super(message); this.status = status; }
@@ -63,6 +63,48 @@ export function repositoryPath(value: unknown, label: string, fallback = '.'): s
   if (!/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/.test(path) || path.split('/').some(part => part === '.' || part === '..') || path.startsWith('-')) fail(`${label}: 저장소 내부 상대 경로를 입력하세요.`);
   return path;
 }
+export function deployEnvironment(value: unknown): DeployEnvironment {
+  return choice(value, ['dev', 'test', 'release'], '환경');
+}
+
+export function sharedKind(value: unknown): SharedKind {
+  return choice(value, ['postgres', 'minio', 'redis'], '자원 유형');
+}
+
+export function databaseRef(input: unknown): string {
+  const name = text(input, 'DB 연결 이름', 64, true);
+  if (name && !/^[a-z][a-z0-9_-]*$/.test(name)) fail('DB 연결 이름은 영문 소문자로 시작해야 합니다.');
+  return name;
+}
+
+function imageCommand(input: unknown, label: string): string[] {
+  const args = input ?? [];
+  if (!Array.isArray(args) || args.length > 24) fail(`${label}은 최대 24개 문자열을 사용하세요.`);
+  const command = args.map(value => text(value, label, 300));
+  if (command.length && (!/^[a-zA-Z0-9_./-]+$/.test(command[0]) || command[0].startsWith('-'))) {
+    fail(`${label} 첫 항목에 이미지의 실행 파일을 지정하세요.`);
+  }
+  return command;
+}
+
+function serviceDeployment(value: unknown): ServiceDeployment {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('배포 환경 설정을 확인하세요.');
+  const item = value as JsonObject;
+  const ref = databaseRef(item.databaseRef);
+  const migration = imageCommand(item.migration, '마이그레이션 명령');
+  const verification = imageCommand(item.verification, 'test 검증 명령');
+  if (migration.length && !ref) fail('마이그레이션에 사용할 DB 연결을 지정하세요.');
+  if (item.portableImage !== undefined && typeof item.portableImage !== 'boolean') fail('이미지 재사용 설정을 확인하세요.');
+  return {
+    portClass: choice(item.portClass, ['web', 'api'], '포트 유형'),
+    environment: choice(item.environment, ['dev', 'test', 'release'], '배포 환경'),
+    databaseRef: ref,
+    ...(item.storageRef ? { storageRef: databaseRef(item.storageRef) } : {}),
+    ...(item.redisRef ? { redisRef: databaseRef(item.redisRef) } : {}),
+    migration, verification, portableImage: item.portableImage === true
+  };
+}
+
 export function serviceInput(body: JsonObject): ServiceInput {
   const name = text(body.name, '서비스 이름', 63);
   if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(name)) fail('서비스 이름은 영문 소문자로 시작하고 소문자·숫자·하이픈을 사용하세요.');
@@ -82,6 +124,7 @@ export function serviceInput(body: JsonObject): ServiceInput {
     sourcePath: repositoryPath(body.sourcePath, '소스 경로'),
     dockerfile: repositoryPath(body.dockerfile, 'Dockerfile 경로', 'Dockerfile'),
     buildContext: repositoryPath(body.buildContext, '빌드 컨텍스트'),
-    containerPort: body.containerPort, routeSegment, healthPath, watchPaths
+    containerPort: body.containerPort, routeSegment, healthPath, watchPaths,
+    ...(body.deployment === undefined ? {} : { deployment: serviceDeployment(body.deployment) })
   };
 }

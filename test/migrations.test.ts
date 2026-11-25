@@ -1,3 +1,4 @@
+import { schemaVersion } from '../src/migrations.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -31,7 +32,7 @@ test('v1 migration retains projects, MCPs, bindings and events and is idempotent
     store.createService(projectId, { name: 'api', kind: 'app', language: 'python', sourcePath: '.', dockerfile: 'Dockerfile', buildContext: '.', containerPort: 8000, routeSegment: '', healthPath: '/health', watchPaths: ['apps/**'] });
     store.close(); store = createStore(path); state = store.snapshot();
     assert.equal(state.services.length, 1); assert.deepEqual(state.services[0].watchPaths, ['apps/**']); assert.equal(state.events.length, 2);
-    const check = new DatabaseSync(path); assert.equal((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 4); check.close();
+    const check = new DatabaseSync(path); assert.equal((check.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, schemaVersion); check.close();
   } finally { store?.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -58,9 +59,9 @@ test('v2 migration keeps existing services when adding the build queue', async (
 test('future schema is rejected without resetting its version', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dama-future-')); const path = join(dir, 'future.sqlite');
   try {
-    let db = new DatabaseSync(path); db.exec('PRAGMA user_version=5'); db.close();
+    let db = new DatabaseSync(path); db.exec(`PRAGMA user_version=${schemaVersion + 1}`); db.close();
     assert.throws(() => createStore(path), /새로운 데이터베이스/);
-    db = new DatabaseSync(path); assert.equal((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 5); db.close();
+    db = new DatabaseSync(path); assert.equal((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, schemaVersion + 1); db.close();
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

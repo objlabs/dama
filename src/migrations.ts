@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-export const schemaVersion = 4;
+export const schemaVersion = 10;
 
 export function migrateDatabase(db: DatabaseSync): void {
   db.exec('BEGIN IMMEDIATE');
@@ -53,8 +53,65 @@ export function migrateDatabase(db: DatabaseSync): void {
       CREATE UNIQUE INDEX build_pending_commit ON build_jobs(serviceId,commitSha) WHERE status IN ('queued','running');
       CREATE UNIQUE INDEX build_single_runner ON build_jobs(status) WHERE status='running';
       CREATE UNIQUE INDEX build_active_service ON build_jobs(serviceId) WHERE active=1;
-      PRAGMA user_version = ${schemaVersion};
     `);
+    if (version < 5) db.exec(`
+      CREATE TABLE IF NOT EXISTS project_git_auth (
+        projectId TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('github','gitlab')),
+        username TEXT NOT NULL, ciphertext TEXT NOT NULL
+      );
+    `);
+    if (version < 6) {
+      // Older migration fixtures may already contain a newer services table.
+      const services = db.prepare('PRAGMA table_info(services)').all() as { name: string }[];
+      if (!services.some(column => column.name === 'deployment')) {
+        db.exec("ALTER TABLE services ADD COLUMN deployment TEXT NOT NULL DEFAULT '{}'");
+      }
+      db.exec('ALTER TABLE build_jobs ADD COLUMN evidence TEXT');
+    }
+    if (version < 7) db.exec(`
+      CREATE TABLE IF NOT EXISTS shared_resources (
+        id TEXT PRIMARY KEY,
+        projectId TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
+        environment TEXT NOT NULL CHECK(environment IN ('dev','test','release')),
+        kind TEXT NOT NULL CHECK(kind IN ('postgres','minio','redis')),
+        name TEXT NOT NULL,
+        ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN (0,1)),
+        ciphertext TEXT NOT NULL,
+        UNIQUE(projectId, environment, kind)
+      );
+    `);
+    if (version < 8) db.exec(`
+      ALTER TABLE project_git_auth RENAME TO project_git_auth_v7;
+      CREATE TABLE project_git_auth (
+        projectId TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('github','gitlab','forgejo')),
+        username TEXT NOT NULL, ciphertext TEXT NOT NULL
+      );
+      INSERT INTO project_git_auth SELECT * FROM project_git_auth_v7;
+      DROP TABLE project_git_auth_v7;
+      CREATE TABLE IF NOT EXISTS forgejo_settings (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        dataPath TEXT NOT NULL,
+        port INTEGER NOT NULL CHECK(port BETWEEN 3000 AND 3999),
+        owner TEXT,
+        ciphertext TEXT
+      );
+    `);
+    if (version < 9) db.exec(`
+      CREATE TABLE IF NOT EXISTS nginx_state (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        draft TEXT NOT NULL, applied TEXT NOT NULL, previous TEXT
+      );
+      INSERT OR IGNORE INTO nginx_state(id,draft,applied) VALUES(1,'[]','[]');
+    `);
+    if (version < 10) {
+      const columns = db.prepare('PRAGMA table_info(nginx_state)').all() as { name: string }[];
+      if (!columns.some(column => column.name === 'bindAddress')) {
+        db.exec("ALTER TABLE nginx_state ADD COLUMN bindAddress TEXT NOT NULL DEFAULT '127.0.0.1'");
+      }
+    }
+    db.exec(`PRAGMA user_version = ${schemaVersion}`);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }

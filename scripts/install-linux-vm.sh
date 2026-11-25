@@ -13,6 +13,7 @@ Install Dama on a Debian or Ubuntu systemd VM for apps.objlabs.team.
                         enable daily renewal. Requires root Route 53 credentials.
   --certbot-renewal     Enable daily renewal for an existing Certbot certificate.
   --accept-acme-terms   Accept ACME terms and issue without interactive prompts.
+  --nginx-admin-only    Register Nginx management on an existing Dama VM.
   --help                Show these instructions.
 HELP
 }
@@ -23,6 +24,7 @@ log() { printf '\n[Dama] %s\n' "$*"; }
 cert_dir=/etc/letsencrypt/live/objlabs.team
 route53_email=
 renew=false
+nginx_admin_only=false
 acme_arguments=()
 while (($#)); do
     case "$1" in
@@ -39,6 +41,7 @@ while (($#)); do
             shift 2
             ;;
         --certbot-renewal) renew=true; shift ;;
+        --nginx-admin-only) nginx_admin_only=true; shift ;;
         --accept-acme-terms) acme_arguments=(--agree-tos --non-interactive); shift ;;
         *) fail "Unknown option $1. See --help." ;;
     esac
@@ -60,6 +63,60 @@ fi
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 templates="$source_dir/deploy/systemd"
 [[ -f "$source_dir/package-lock.json" && -f "$templates/dama-site.conf.example" ]] || fail 'Run from the complete Dama source tree.'
+
+install_config() {
+    local mode=$1 source=$2 destination=$3
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        [[ -f "$destination" && ! -L "$destination" ]] && cmp -s "$source" "$destination" ||
+            fail "Existing configuration differs: $destination"
+        return
+    fi
+    install -m "$mode" -- "$source" "$destination"
+}
+
+install_nginx_admin() {
+    install -d -m 0755 -o dama -g dama /etc/nginx/dama-sites
+    install -d -m 0755 /etc/dama/nginx-default
+    for file in fullchain.pem privkey.pem; do
+        link="/etc/dama/nginx-default/$file"
+        if [[ ! -e "$link" && ! -L "$link" ]]; then ln -s "$cert_dir/$file" "$link"; fi
+    done
+    if [[ ! -e /etc/nginx/dama-sites/active.conf ]]; then
+        install -o dama -g dama -m 0644 /dev/null /etc/nginx/dama-sites/active.conf
+    fi
+    install_config 0644 "$templates/dama-managed-sites.conf" /etc/nginx/conf.d/dama-managed-sites.conf
+    install_config 0644 "$templates/dama-managed-check.conf" /etc/dama/nginx-candidate.conf
+    install_config 0755 "$templates/nginx-admin" /usr/local/libexec/dama/nginx-admin
+    install_config 0755 "$source_dir/deploy/nginx/private-cert" /usr/local/libexec/dama/private-cert
+    visudo -cf "$templates/dama-nginx-admin.sudoers"
+    install_config 0440 "$templates/dama-nginx-admin.sudoers" /etc/sudoers.d/dama-nginx-admin
+}
+
+enable_certbot_schedule() {
+    install -d -m 0755 /etc/systemd/system/certbot.timer.d /etc/letsencrypt/renewal-hooks/deploy
+    install_config 0644 "$templates/certbot-daily.conf" /etc/systemd/system/certbot.timer.d/90-dama-daily.conf
+    install_config 0755 "$templates/reload-nginx-after-renewal.sh" /etc/letsencrypt/renewal-hooks/deploy/90-dama-reload-nginx
+    systemctl daemon-reload
+    systemctl enable --now certbot.timer
+}
+
+if "$nginx_admin_only"; then
+    id dama >/dev/null 2>&1 || fail 'Install Dama on this VM first.'
+    [[ -r "$cert_dir/fullchain.pem" && -r "$cert_dir/privkey.pem" ]] || fail "Missing certificate or key in $cert_dir."
+    if ! command -v certbot >/dev/null; then
+        apt-get update
+        apt-get install -y --no-install-recommends certbot
+    fi
+    exec 9>/run/dama-install.lock
+    flock --nonblock 9 || fail 'Another Dama installation is running.'
+    install_nginx_admin
+    /usr/local/libexec/dama/nginx-admin test
+    enable_certbot_schedule
+    if systemctl is-active --quiet nginx.service; then
+        /usr/local/libexec/dama/nginx-admin reload
+    fi
+    exit 0
+fi
 
 node_version=26.13.1
 case "$(uname -m)" in
@@ -92,7 +149,7 @@ for package in ca-certificates libatomic1; do
         packages+=("$package")
     fi
 done
-if "$renew" && ! command -v certbot >/dev/null; then packages+=(certbot); fi
+command -v certbot >/dev/null || packages+=(certbot)
 if [[ -n "$route53_email" ]] && [[ "$(dpkg-query -W -f='${db:Status-Status}' python3-certbot-dns-route53 2>/dev/null || true)" != installed ]]; then
     packages+=(python3-certbot-dns-route53)
 fi
@@ -139,16 +196,6 @@ cleanup() {
     return "$result"
 }
 trap cleanup EXIT
-
-install_config() {
-    local mode=$1 source=$2 destination=$3
-    if [[ -e "$destination" || -L "$destination" ]]; then
-        [[ -f "$destination" && ! -L "$destination" ]] && cmp -s "$source" "$destination" ||
-            fail "Existing configuration differs: $destination"
-        return
-    fi
-    install -m "$mode" -- "$source" "$destination"
-}
 
 log "Prepare Node.js $node_version and verify the build"
 install -d -m 0755 /opt/dama/runtime /opt/dama/releases
@@ -199,12 +246,18 @@ install_config 0644 "$templates/dama.env.example" /etc/dama/dama.env
 install_config 0755 "$templates/nginx" /usr/local/libexec/dama/nginx
 visudo -cf "$templates/dama-nginx.sudoers"
 install_config 0440 "$templates/dama-nginx.sudoers" /etc/sudoers.d/dama-nginx
+install_nginx_admin
 install_config 0644 "$templates/nginx-after-dama.conf" /etc/systemd/system/nginx.service.d/after-dama.conf
 
 release=$(mktemp -d /opt/dama/releases/release.XXXXXX)
 chmod 0755 "$release"
 cp -R -- "$scratch/build/dist" "$scratch/build/package.json" "$release/"
 chown -R root:root "$release"
+install -d -m 0755 "$release/deploy/database"
+for template in compose.yaml compose.host.yaml compose.shared.yaml; do
+    install -m 0644 "$source_dir/deploy/database/$template" "$release/deploy/database/$template"
+done
+install -D -m 0644 "$source_dir/deploy/forgejo/compose.yaml" "$release/deploy/forgejo/compose.yaml"
 chmod -R go-w "$release"
 for unit in dama.service dama-worker.service; do
     sed -e 's|/opt/dama|/opt/dama/current|g' -e "s|/usr/bin/node|$node_root/bin/node|g" "$templates/$unit" > "$scratch/$unit"
@@ -255,15 +308,10 @@ done
 "$worker_ready" || fail 'Worker is not ready. See journalctl -u dama-worker.service.'
 
 if "$renew"; then
-    log 'Verify Certbot renewal and install the daily schedule'
+    log 'Verify existing Certbot renewal'
     certbot renew --cert-name "${cert_dir##*/}" --dry-run
-    install -d -m 0755 /etc/systemd/system/certbot.timer.d /etc/letsencrypt/renewal-hooks/deploy
-    install_config 0644 "$templates/certbot-daily.conf" /etc/systemd/system/certbot.timer.d/90-dama-daily.conf
-    install_config 0755 "$templates/reload-nginx-after-renewal.sh" /etc/letsencrypt/renewal-hooks/deploy/90-dama-reload-nginx
-    systemctl daemon-reload
-    systemctl enable certbot.timer
-    systemctl restart certbot.timer
 fi
+enable_certbot_schedule
 
 systemctl enable docker.service dama.service nginx.service dama-worker.service
 complete=true

@@ -3,3 +3,25 @@
 .default-address{font-size:9px;color:#8a9580;margin:14px 0;line-height:1.7}.default-address small{display:block;font-size:10px;color:#677b59;overflow-wrap:anywhere}
 
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field-row label{min-width:0}.service-actions{display:flex;gap:8px}#editor{max-height:90vh;overflow-y:auto}#plan-dialog{width:min(800px,calc(100% - 30px));max-height:90vh;overflow-y:auto}#plan-output{background:#eff3e8;padding:18px;border-radius:8px;overflow:auto;font-size:11px;line-height:1.7;max-height:55vh}
+
+.git-auth-panel{margin:0 0 12px;border:1px solid var(--line);border-radius:7px;padding:10px 12px}
+.git-auth-panel summary{cursor:pointer;font-size:12px;color:#526446}
+.git-auth-panel .git-fields{margin-top:15px}
+.git-actions,.card-bottom{flex-wrap:wrap;gap:8px}
+.git-actions{display:flex;align-items:center}
+
+.checkbox-line{display:flex;align-items:center;gap:8px}.checkbox-line input{width:auto;margin:0}
+
+.shared-services{list-style:none;margin:0 0 14px;padding:0}
+.shared-services li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;font-size:11px}
+.shared-form{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.forgejo-panel .shared-form{margin:12px 0 4px}
+.forgejo-panel .shared-form label{margin:0;min-width:0}
+.forgejo-panel .shared-form label:first-child{flex:1 1 220px}
+.forgejo-panel .shared-form button{align-self:end;min-height:36px}
+.forgejo-panel .table-wrap{margin-top:14px}
+.forgejo-panel .field-note{overflow-wrap:anywhere}
+.nginx-panel .git-actions{flex-wrap:wrap}
+.nginx-panel details{margin-top:12px}
+.nginx-panel summary{font-size:11px;cursor:pointer;color:var(--green)}
+.nginx-output{max-height:22rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;background:#f5f7f1;padding:10px;border-radius:6px}

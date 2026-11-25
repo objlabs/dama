@@ -8,17 +8,22 @@ import { promisify } from 'node:util';
 import { deploymentPlan } from './deployment-plan.js';
 import { nginxLocations } from './routing.js';
 import type { Store } from './store.js';
-import type { ClaimedBuild, DeploymentPlan, Release } from './types.js';
+import type { ClaimedBuild, DeploymentPlan, Release, BuildEvidence } from './types.js';
 import { commitSha } from './validation.js';
+import { fetchGitCommit } from './git-auth.js';
+import { requireLocalForgejo } from './forgejo.js';
+import { allocateHostPort } from './deployment-ports.js';
+import { databaseRuntime, migrationVersion } from './database-connections.js';
+import { sharedRuntime } from './shared-environment.js';
 
 const exec = promisify(execFile);
 const includeHeader = '# Managed by Dama deployment worker\n';
 export interface WorkerConfig { include: string; nginxConfig: string; probeOrigin: string }
 
-async function command(file: string, args: string[], cwd?: string, timeout = 30_000): Promise<string> {
+async function command(file: string, args: string[], cwd?: string, timeout = 30_000, env?: Record<string, string>): Promise<string> {
   const { stdout } = await exec(file, args, {
     cwd, timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env }
   });
   return stdout.trim();
 }
@@ -144,36 +149,111 @@ export async function deployNext(store: Store, config: WorkerConfig): Promise<bo
     const existing = routes.filter(route => route.serviceId !== job.serviceId);
     nginxLocations([...existing, { ...plan.nginxRoute, upstreamPort: 1024 }]);
 
-    phase = 'Git 체크아웃';
-    log(phase);
-    checkout = await realpath(await mkdtemp(join(tmpdir(), 'dama-build-')));
-    await command('git', ['init', '--quiet'], checkout);
-    await command('git', ['-c', 'protocol.file.allow=never', 'fetch', '--no-tags', '--depth=1', '--', repo.href, sha], checkout, 120_000);
-    if (await command('git', ['rev-parse', 'FETCH_HEAD'], checkout) !== sha) throw new Error('요청한 커밋과 가져온 커밋이 다릅니다.');
-    await command('git', ['-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', sha], checkout);
-    await rm(join(checkout, '.git'), { recursive: true });
-    const buildArgs = plan.build.argv.slice(1);
-    await withinCheckout(checkout, buildArgs[buildArgs.indexOf('--file') + 1], false);
-    await withinCheckout(checkout, buildArgs.at(-1)!, true);
+    let image: string;
+    if (plan.promotion) {
+      phase = 'test 이미지 확인';
+      image = await command('docker', ['image', 'inspect', '--format', '{{.Id}}', plan.promotion.image]);
+      if (image !== plan.promotion.image) throw new Error('test에서 검증한 이미지가 없습니다.');
+    } else {
+      phase = 'Git 체크아웃';
+      log(phase);
+      checkout = await realpath(await mkdtemp(join(tmpdir(), 'dama-build-')));
+      await command('git', ['init', '--quiet'], checkout);
+      const auth = store.getGitAuth(plan.projectId, repo.href);
+      if (auth) await fetchGitCommit(repo.href, sha, auth, checkout, await requireLocalForgejo(store, repo.href));
+      else await command('git', ['-c', 'protocol.file.allow=never', 'fetch', '--no-tags', '--depth=1', '--', repo.href, sha], checkout, 120_000);
+      if (await command('git', ['rev-parse', 'FETCH_HEAD'], checkout) !== sha) throw new Error('요청한 커밋과 가져온 커밋이 다릅니다.');
+      await command('git', ['-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', sha], checkout);
+      await rm(join(checkout, '.git'), { recursive: true });
+      const buildArgs = plan.build.argv.slice(1);
+      await withinCheckout(checkout, buildArgs[buildArgs.indexOf('--file') + 1], false);
+      await withinCheckout(checkout, buildArgs.at(-1)!, true);
 
-    phase = 'Docker 빌드';
-    log(phase);
-    await command('docker', buildArgs, checkout, 900_000);
-    const tag = buildArgs[buildArgs.indexOf('--tag') + 1];
-    const image = await command('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]);
-    if (!/^sha256:[0-9a-f]{64}$/.test(image)) throw new Error('빌드한 이미지 ID를 확인할 수 없습니다.');
+      phase = 'Docker 빌드';
+      log(phase);
+      await command('docker', buildArgs, checkout, 900_000);
+      const tag = buildArgs[buildArgs.indexOf('--tag') + 1];
+      image = await command('docker', ['image', 'inspect', '--format', '{{.Id}}', tag]);
+    }
+    if (!/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error('빌드한 이미지 ID를 확인할 수 없습니다.');
+    const evidence: BuildEvidence = { image };
+    store.recordEvidence(job.id, evidence);
+
+    const settings = plan.settings;
+    phase = '기존 DB 연결 확인';
+    const dbRef = settings?.databaseRef;
+    const managed = dbRef && settings
+      ? sharedRuntime(store, dbRef, plan.projectId, settings.environment, 'postgres') : undefined;
+    const database = managed?.database ?? (dbRef && settings
+      ? await databaseRuntime(dbRef, settings.environment, settings.migration.length > 0) : undefined);
+    const runtimeEnv: Record<string, string> = database ? { DATABASE_URL: database.runtimeUrl } : {};
+    if (settings) {
+      for (const [ref, kind] of [[settings.storageRef, 'minio'], [settings.redisRef, 'redis']] as const) {
+        if (!ref) continue;
+        const binding = sharedRuntime(store, ref, plan.projectId, settings.environment, kind);
+        if (!binding?.variables) throw new Error('선택한 공용 자원 연결을 찾지 못했습니다.');
+        Object.assign(runtimeEnv, binding.variables);
+      }
+    }
+    const network = database?.network ?? (Object.keys(runtimeEnv).length && settings ? `dama-db-${settings.environment}` : undefined);
+    const environmentArgs = (values: Record<string, string>) => Object.keys(values).flatMap(key => ['--env', key]);
+    const label = `team.objlabs.dama.deployment=${job.id}`;
+    const oneOff = async (name: string, args: string[], values: Record<string, string>): Promise<string> => {
+      const [entrypoint, ...parameters] = args;
+      return command('docker', ['run', '--rm', '--name', `dama-${name}-${job.id}`, '--label', label,
+        ...(network ? ['--network', network] : []), ...environmentArgs(values),
+        '--env', `DAMA_ENVIRONMENT=${settings?.environment ?? 'dev'}`, '--env', 'DATABASE_RUN_MIGRATIONS=false',
+        '--entrypoint', entrypoint, image, ...parameters], undefined, 900_000, values);
+    };
+    if (settings?.migration.length && database?.migrationUrl) {
+      phase = 'DB 마이그레이션';
+      log(phase);
+      attemptedRun = true;
+      let output: string;
+      try { output = await oneOff('migration', settings.migration, { DATABASE_URL: database.migrationUrl }); }
+      catch { throw new Error('마이그레이션이 실패했습니다. 기존 앱 경로를 유지했습니다.'); }
+      evidence.migrationVersion = migrationVersion(output);
+      evidence.migratedAt = new Date().toISOString();
+      store.recordEvidence(job.id, evidence);
+    }
+    if (settings?.environment === 'test' && settings.verification?.length) {
+      phase = 'test 검증';
+      attemptedRun = true;
+      try { await oneOff('verification', settings.verification, runtimeEnv); }
+      catch { throw new Error('test 이미지 검증이 실패했습니다.'); }
+      evidence.verifiedAt = new Date().toISOString();
+      store.recordEvidence(job.id, evidence);
+    }
 
     phase = '컨테이너 상태 확인';
     log(phase);
     const container = `dama-release-${job.id}`;
     const args = plan.run.argv.slice(1, -1);
     args[args.indexOf('--name') + 1] = container;
+    const publishIndex = args.indexOf('--publish') + 1;
+    const containerPort = plan.discoverPort.argv.at(-1)!;
+    if (settings) args.push('--env', `DAMA_ENVIRONMENT=${settings.environment}`);
+    if (network) args.push('--network', network, ...environmentArgs(runtimeEnv));
+    if (database) args.push('--env', 'DATABASE_RUN_MIGRATIONS=false');
     attemptedRun = true;
-    await command('docker', [...args, '--label', `team.objlabs.dama.deployment=${job.id}`, image]);
-    const port = await command('docker', ['port', container, plan.discoverPort.argv.at(-1)!]);
-    const match = /^127\.0\.0\.1:(\d+)$/.exec(port);
-    if (!match) throw new Error('Docker의 루프백 포트 할당을 확인할 수 없습니다.');
-    const upstreamPort = Number(match[1]);
+    const expectedPort = await allocateHostPort(settings?.portClass ?? 'web', async port => {
+      args[publishIndex] = `127.0.0.1:${port}:${containerPort}`;
+      try {
+        await command('docker', [...args, '--label', label, image], undefined, 30_000,
+          runtimeEnv);
+        return true;
+      } catch (error) {
+        const stderr = error && typeof error === 'object' && 'stderr' in error ? String(error.stderr) : '';
+        if (!/address already in use|port is already allocated|ports are not available/i.test(stderr)) {
+          throw new Error('Docker 앱 컨테이너를 시작하지 못했습니다.');
+        }
+        await removeCandidate(job.id);
+        return false;
+      }
+    });
+    const port = await command('docker', ['port', container, containerPort]);
+    if (port !== `127.0.0.1:${expectedPort}`) throw new Error('Docker의 루프백 포트 할당을 확인할 수 없습니다.');
+    const upstreamPort = expectedPort;
     await waitForHttp(`http://127.0.0.1:${upstreamPort}`, plan.healthCheck.path, plan.healthCheck.timeoutSeconds * 1000);
 
     phase = 'Nginx 전환';
@@ -189,6 +269,11 @@ export async function deployNext(store: Store, config: WorkerConfig): Promise<bo
     await Promise.all(next.map(route => waitForHttp(config.probeOrigin, route.healthPath, 10_000, route.deploymentId)));
     store.finishBuild(job.id, { release });
     log('배포 완료');
+    const previous = routes.find(route => route.serviceId === job.serviceId);
+    if (previous) {
+      await command('docker', ['stop', '--time', '30', previous.container], undefined, 40_000)
+        .catch(() => log('이전 컨테이너의 실행 상태와 호스트 포트를 확인하세요.'));
+    }
     return true;
   } catch (error) {
     // Restore before cleaning up the candidate so a failed restore cannot leave a dead upstream.

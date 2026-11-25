@@ -1,0 +1,78 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+action=${1:-}
+shift || exit 2
+domain_ok() {
+    [[ ${#1} -le 253 && $1 =~ ^(localhost|127\.0\.0\.1|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)$ ]]
+}
+test_live() {
+    local result
+    result=$(nginx -t 2>&1) || { printf '%s\n' "$result" >&2; return 1; }
+    if [[ $result == *'conflicting server name'* ]]; then printf '%s\n' "$result" >&2; return 1; fi
+}
+case "$action" in
+    status|start|stop|restart|reload|logs|ca|test|test-candidate)
+        [[ $# == 0 ]]
+        case "$action" in
+            status) systemctl show -p ActiveState --value nginx.service ;;
+            logs) journalctl -u nginx.service -n 40 --no-pager -o cat ;;
+            ca) cat /etc/dama/nginx-authority/ca.pem ;;
+            test) test_live ;;
+            test-candidate) nginx -t -c /etc/dama/nginx-candidate.conf ;;
+            reload) test_live && systemctl reload nginx.service ;;
+            start|restart) test_live && systemctl "$action" nginx.service ;;
+            stop) systemctl stop nginx.service ;;
+        esac
+        ;;
+    inspect)
+        [[ $# == 2 ]] && domain_ok "$2" || exit 2
+        case "$1" in
+            existing) file=/etc/dama/nginx-default/fullchain.pem ;;
+            private) file="/etc/dama/certs/$2/fullchain.pem" ;;
+            acme) file="/etc/letsencrypt/live/$2/fullchain.pem" ;;
+            *) exit 2 ;;
+        esac
+        openssl x509 -in "$file" -noout -enddate -issuer -ext subjectAltName
+        openssl x509 -in "$file" -noout -checkend 0
+        if [[ "$2" =~ ^[0-9.]+$ ]]; then
+            match=$(openssl x509 -in "$file" -noout -checkip "$2")
+        else
+            match=$(openssl x509 -in "$file" -noout -checkhost "$2")
+        fi
+        printf '%s\n' "$match"
+        [[ $match == *' does match certificate' ]] || { printf '%s\n' "$match" >&2; exit 1; }
+        ;;
+    private)
+        [[ $# == 1 ]] && domain_ok "$1" || exit 2
+        /usr/local/libexec/dama/private-cert /etc/dama/nginx-authority "$1" /etc/dama/certs
+        ;;
+    issue)
+        [[ $# == 4 ]] && domain_ok "$1" || exit 2
+        [[ $1 != localhost && ! $1 =~ ^[0-9.]+$ && $3 =~ ^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+        case "$2" in
+            http) args=(--webroot -w /var/www/dama-acme) ;;
+            route53) args=(--dns-route53) ;;
+            *) exit 2 ;;
+        esac
+        case "$4" in
+            staging) args+=(--dry-run) ;;
+            production) ;;
+            *) exit 2 ;;
+        esac
+        exec certbot certonly "${args[@]}" --non-interactive --agree-tos --keep-until-expiring --cert-name "$1" -d "$1" --email "$3"
+        ;;
+    renew)
+        [[ $# == 2 ]] && domain_ok "$1" || exit 2
+        case "$2" in
+            staging) exec certbot renew --cert-name "$1" --dry-run ;;
+            production) exec certbot renew --cert-name "$1" ;;
+            *) exit 2 ;;
+        esac
+        ;;
+    timer)
+        [[ $# == 0 ]]
+        systemctl list-timers --all --no-pager certbot.timer
+        ;;
+    *) exit 2 ;;
+esac

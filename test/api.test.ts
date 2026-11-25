@@ -165,7 +165,7 @@ test('monorepo services share a repository and container ports but own their rou
   assert.equal(plan.body.healthCheck.path, `/${p.id}/api/health`);
   assert.ok(plan.body.build.argv.includes('apps/api/Dockerfile'));
   assert.equal(plan.body.build.argv.at(-1), '.');
-  assert.ok(plan.body.run.argv.includes('127.0.0.1::8000'));
+  assert.ok(plan.body.run.argv.includes('127.0.0.1:<available-port>:8000'));
   assert.equal(plan.body.nginxRoute.upstreamPort, null);
   const updated = await api<Service>(`/api/services/${python.body.id}`, 'PUT', { ...service, containerPort: 9000, watchPaths: ['apps/api/**'] });
   assert.equal(updated.status, 200); assert.equal(updated.body.containerPort, 9000);
@@ -202,4 +202,65 @@ test('managed MCP can be provided by a service in an ordinary monorepo project',
   assert.equal((await api<McpServer>('/api/mcps', 'POST', { ...managed, name: 'wrong-owner', projectId: other.id })).status, 400);
   await api(`/api/mcps/${m.body.id}`, 'DELETE');
   assert.equal((await api(`/api/services/${s.id}`, 'DELETE')).status, 200);
+});
+
+test('project Git PAT API creates, rotates and removes credentials without returning the secret', async t => {
+  const { api, store } = await setup(t);
+  const gitAuth = { token: 'test-github-pat', username: 'tool-operator' };
+  const created = await api<ProjectView>('/api/projects', 'POST', { ...project, gitAuth });
+  assert.equal(created.status, 201);
+  assert.deepEqual(created.body.gitAuth, { provider: 'github', username: gitAuth.username });
+  assert.doesNotMatch(JSON.stringify(created.body), /test-github-pat/);
+  assert.equal((await api('/api/projects', 'POST', { ...project, repository: 'http://example.test/team/repo.git', gitAuth })).status, 400);
+
+  const endpoint = `/api/projects/${created.body.id}/git-auth`;
+  const rotated = await api(endpoint, 'PUT', { ...gitAuth, token: 'rotated-token' });
+  assert.equal(rotated.status, 200);
+  assert.doesNotMatch(JSON.stringify(rotated.body), /rotated-token/);
+  assert.equal(store.getGitAuth(created.body.id, created.body.repository)?.token, 'rotated-token');
+  const removed = await api(endpoint, 'DELETE');
+  assert.deepEqual(removed, { status: 200, body: { gitAuth: null } });
+  assert.equal((await api(endpoint + '/check', 'POST', {})).status, 400);
+});
+
+test('Forgejo project credentials are restricted to the configured local origin', async t => {
+  const { api, store } = await setup(t);
+  assert.equal((await api<{ state: string }>('/api/forgejo')).body.state, 'unconfigured');
+  assert.deepEqual((await api('/api/forgejo/repositories')).body, []);
+  store.configureForgejo('/test/forgejo-data', 3301);
+  assert.equal(store.configureForgejo('/other/forgejo-data', 3302).port, 3301);
+  store.setForgejoToken('local-user', 'private-management-token');
+  assert.equal(store.getForgejoToken()?.token, 'private-management-token');
+
+  const repository = 'http://127.0.0.1:3301/local-user/project.git';
+  const gitAuth = { username: 'local-user', token: 'private-deployment-token' };
+  const data = { ...project, repository, gitAuth };
+  const created = await api<ProjectView>('/api/projects', 'POST', data);
+  assert.equal(created.status, 201);
+  assert.equal(created.body.repository, repository);
+  assert.deepEqual(created.body.gitAuth, { provider: 'forgejo', username: 'local-user' });
+  assert.equal(store.getGitAuth(created.body.id, repository)?.token, gitAuth.token);
+  assert.doesNotMatch(JSON.stringify((await api('/api/state')).body), /private-(management|deployment)-token/);
+  for (const badOrigin of ['http://127.0.0.1:3302', 'http://localhost:3301', 'http://example.test']) {
+    assert.equal((await api('/api/projects', 'POST', { ...data, repository: repository.replace('http://127.0.0.1:3301', badOrigin) })).status, 400);
+  }
+  assert.equal((await api('/api/projects', 'POST', { ...data, gitAuth: { ...gitAuth, provider: 'github' } })).status, 400);
+});
+
+test('Nginx site drafts reject directive injection and remain separate from applied settings', async t => {
+  const { api, store } = await setup(t);
+  const site = { domain: 'Localhost', target: 'port', port: 8080, tls: 'private' };
+  assert.equal((await api('/api/nginx/sites', 'PUT', { ...site, domain: 'local.test; include /etc/nginx/a.conf' })).status, 400);
+  assert.equal((await api('/api/nginx/sites', 'PUT', { ...site, port: '8080; return 200' })).status, 400);
+  assert.equal((await api('/api/nginx/sites', 'PUT', site)).status, 200);
+  assert.deepEqual(store.nginxState().sites, [{ ...site, domain: 'localhost' }]);
+  assert.deepEqual(store.nginxState().applied, []);
+  assert.equal((await api('/api/nginx/stop', 'POST', {})).status, 400);
+  assert.equal(store.nginxBindAddress(), '127.0.0.1');
+  for (const address of ['0.0.0.0', '1.1.1.1', '127.0.0.1:3999']) {
+    assert.equal((await api('/api/nginx/bind', 'POST', { address, confirmed: true })).status, 400);
+  }
+  assert.equal(store.nginxBindAddress(), '127.0.0.1');
+  assert.equal((await api('/api/nginx/sites?domain=localhost', 'DELETE')).status, 200);
+  assert.deepEqual(store.nginxState().sites, []);
 });

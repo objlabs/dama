@@ -102,3 +102,15 @@ Snap 등 다른 설치 방식은 해당 패키지의 타이머를 확인한다. 
 - Certbot 운영과 갱신: https://eff-certbot.readthedocs.io/en/stable/using.html
 - win-acme와 PEM 저장: https://www.win-acme.com/manual/advanced-use/
 - Nginx 프록시와 URI 처리: https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass
+
+## 공용 환경의 Nginx 관리
+
+맥의 Docker Desktop에서는 시작할 때 HTTP와 HTTPS 포트를 3999부터 배정하고, 기본값으로 루프백 주소에 연다. 도메인에는 `localhost` 또는 로컬 DNS와 hosts 파일에서 이 Mac의 루프백 주소로 해석되는 내부 이름을 입력한다. 연결 대상은 이 Mac에서 실행하는 앱의 포트 또는 Forgejo다. 도메인과 초안을 저장하고, 설정을 검증한 뒤 적용한다. Nginx 중지와 재시작에는 연결된 도메인이 표시된다.
+
+공유기에서 외부 접속을 전달하려면 **공용 환경 → Nginx → 접속 범위**에서 공유기가 접근할 Mac의 LAN IPv4 주소를 선택하고 적용한다. 설정 변경 후 Nginx에는 기존 포트와 사이트가 그대로 연결되며, 화면에 표시된 LAN 주소와 포트를 공유기에 입력한다. 외부 사용자가 입력할 이름은 Nginx의 도메인, DNS, TLS 인증서와 일치해야 한다. 사설 CA를 사용하는 경우 외부 접속 기기에도 CA 공개 인증서를 설치한다.
+
+로컬명과 내부 DNS에 HTTPS가 필요하면 도메인에서 **사설 CA**를 선택하고 **사설 인증서 발급**을 누른 뒤 설정을 적용한다. **사설 CA 인증서 내려받기**로 받은 공개 인증서를 각 클라이언트의 신뢰 저장소에 설치한다. 사설 CA 키와 사이트 키는 로컬 디스크 또는 서버에 보관하며 화면에서 내려받을 수 있는 파일은 CA 공개 인증서다. 사설 인증서가 만료되기 전에 같은 화면에서 다시 발급할 수 있다.
+
+Linux 운영 서버에서는 새 Dama 빌드와 기존 systemd Nginx를 연동한다. 신규 설치는 VM 설치 스크립트가 연동을 준비한다. 기존 VM에는 새 빌드 배치와 함께 `sudo bash scripts/install-linux-vm.sh --nginx-admin-only`를 실행한다. 설치 때 별도의 인증서 디렉터리를 사용했다면 같은 `--cert-dir` 값을 넘긴다. 도메인을 배포된 서비스에 연결하면 서비스의 기존 UUID 경로를 따라 현재 활성 배포에 접속한다. 기존 운영 인증서로 연결할 때는 인증서의 만료와 도메인 일치를 검사한다.
+
+Let’s Encrypt HTTP-01은 도메인을 먼저 HTTP 초안으로 적용한다. 이후 인증서 유형을 Let’s Encrypt로 저장하고 테스트 발급으로 DNS와 운영 서버의 HTTP 연결을 확인한 뒤 실제 발급 및 설정 적용을 실행한다. Route 53 DNS-01은 Certbot의 Route 53 플러그인과 서버 계정의 DNS 권한을 사용한다. GUI의 갱신은 기존 Certbot 발급 방식을 사용하며, 자동 갱신은 Certbot 타이머가 처리한다.

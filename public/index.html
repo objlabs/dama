@@ -12,6 +12,7 @@
     <nav aria-label="메인 메뉴">
       <button data-view="overview" class="active"><span>◈</span>개요</button>
       <button data-view="projects"><span>▦</span>프로젝트 <b id="nav-projects">0</b></button>
+      <button data-view="shared"><span>◫</span>공용 환경</button>
       <button data-view="services"><span>▤</span>서비스 <b id="nav-services">0</b></button>
       <button data-view="mcps"><span>⌘</span>MCP 레지스트리 <b id="nav-mcps">0</b></button>
       <button data-view="connections"><span>⇄</span>연결 관리</button>
@@ -42,6 +43,7 @@
     <pre id="plan-output"></pre>
     <div class="dialog-actions"><button type="button" class="button secondary" id="download-plan">JSON 내려받기</button></div>
     <form id="queue-build-form" hidden>
+      <label id="promotion-label" hidden>검증된 test 이미지 <select name="promoteJobId"></select></label>
       <label>Git 커밋 SHA <input name="commitSha" required pattern="[a-fA-F0-9]{40}" maxlength="40" spellcheck="false" aria-describedby="queue-build-note"></label>
       <p class="field-note" id="queue-build-note">배포할 커밋의 40자리 SHA를 입력하세요.</p>
       <p class="form-error" id="queue-build-error" role="alert" hidden></p>

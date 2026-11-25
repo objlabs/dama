@@ -16,6 +16,7 @@
     "pretest": "npm run build",
     "test": "node --experimental-sqlite --test dist/test/*.test.js",
     "nginx:config": "npm run --silent build && node dist/src/export-nginx.js",
+    "db:shared": "node dist/scripts/shared-database.js",
     "deploy:worker": "node --experimental-sqlite dist/src/run-deployments.js"
   },
   "devDependencies": {

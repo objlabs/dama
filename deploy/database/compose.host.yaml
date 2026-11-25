@@ -1,0 +1,4 @@
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DAMA_POSTGRES_HOST_PORT:?Choose an unused port from 5000 to 5999}:5432"
