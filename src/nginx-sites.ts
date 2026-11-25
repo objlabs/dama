@@ -1,6 +1,6 @@
 import type { NginxSite } from './types.js';
 import { isIP } from 'node:net';
-import { deploymentHost, serviceAddress } from './routing.js';
+import { serviceAddress } from './routing.js';
 import { fail, HttpError } from './validation.js';
 import type { Store } from './store.js';
 
@@ -14,12 +14,14 @@ export function nginxDomain(value: unknown): string {
 }
 
 export function nginxSitesConfig(sites: NginxSite[], store: Store, local: boolean): string {
+  const deploymentHost = store.getDeploymentDomain();
   const blocks = sites.map(site => {
     const { domain, tls } = site;
     const address = local ? 'host.docker.internal' : '127.0.0.1';
     const release = site.target.startsWith('service:') ? store.activeReleases().find(item => `service:${item.serviceId}` === site.target) : undefined;
     if (site.target.startsWith('service:') && !release) throw new HttpError(409, '연결된 서비스의 활성 배포를 찾을 수 없습니다.');
     const releasePath = release ? serviceAddress(release.projectId, release.routeSegment).basePath : '';
+    if (releasePath && !deploymentHost) throw new HttpError(409, '운영 서버의 기본 배포 도메인을 지정하세요.');
     const upstream = releasePath ? `https://127.0.0.1` : `http://${address}:${site.port}`;
     const target = releasePath ? `    location = / { return 308 ${releasePath}/; }
     location = ${releasePath} { return 308 ${releasePath}/$is_args$args; }

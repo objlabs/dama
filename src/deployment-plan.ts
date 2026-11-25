@@ -4,7 +4,7 @@ import { serviceAddress } from './routing.js';
 
 // A reviewable plan only; the web process does not run Git, Docker or Nginx.
 export function deploymentPlan(project: Project, service: Service): DeploymentPlan {
-  const { basePath, defaultUrl } = serviceAddress(project.id, service.routeSegment);
+  const { basePath, defaultUrl } = service;
   const tag = `dama/${service.id}:${randomUUID()}`;
   const container = `dama-${service.id}-${randomUUID().slice(0, 8)}`;
   const settings = service.deployment ?? {

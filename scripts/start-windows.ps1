@@ -44,10 +44,11 @@ function Set-DamaForwarding {
 }
 
 function Test-DamaHttps {
+    param([string] $Domain)
     $probeAddress = $settings.ListenAddress
     if ($probeAddress -eq '0.0.0.0') { $probeAddress = '127.0.0.1' }
     $response = & $curl --fail --silent --show-error --max-time 10 --noproxy '*' `
-        --resolve "apps.objlabs.team:443:$probeAddress" 'https://apps.objlabs.team/_dama/ready'
+        --resolve "${Domain}:443:$probeAddress" "https://$Domain/_dama/ready"
     if ($LASTEXITCODE -ne 0 -or ($response -join "`n").Trim() -ne 'dama-nginx-ready') {
         throw 'Windows HTTPS forwarding did not return the verified Dama readiness response.'
     }
@@ -79,7 +80,15 @@ try {
             }
             & $wsl -d Dama -u root --exec bash /opt/dama/source/scripts/start-wsl-services.sh --check
             if ($LASTEXITCODE -ne 0) { throw 'Linux services or the recovery worker are not ready.' }
-            Test-DamaHttps
+            $deploymentDomain = if ($settings.PSObject.Properties['DeploymentDomain'] -and $settings.DeploymentDomain) {
+                $settings.DeploymentDomain
+            } else {
+                $output = & $wsl -d Dama -u root --exec bash /opt/dama/source/scripts/start-wsl-services.sh --domain
+                if ($LASTEXITCODE -ne 0) { throw 'Could not read the installed deployment domain.' }
+                ($output -join "`n").Trim()
+            }
+            if ($deploymentDomain -notmatch '^(?:[a-z0-9-]+\.)+[a-z0-9-]+$') { throw 'The installed deployment domain is invalid.' }
+            Test-DamaHttps -Domain $deploymentDomain
             Write-RuntimeStatus -Ready $true -Message 'Services and Windows HTTPS forwarding verified' -Address $address
             Start-Sleep -Seconds 30
         } catch {

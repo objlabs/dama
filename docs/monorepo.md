@@ -26,9 +26,9 @@ sourcePath는 표시와 향후 변경 감지의 기준이며 자동으로 Docker
 
 예를 들어 프로젝트 UUID가 `P`일 때:
 
-- web: routeSegment를 비움 → `https://apps.objlabs.team/P/`
-- Python api: routeSegment=`api` → `https://apps.objlabs.team/P/api/`
-- Rust MCP: routeSegment=`tools` → `https://apps.objlabs.team/P/tools/`
+- web: routeSegment를 비움 → `https://apps.example.com/P/`
+- Python api: routeSegment=`api` → `https://apps.example.com/P/api/`
+- Rust MCP: routeSegment=`tools` → `https://apps.example.com/P/tools/`
 
 동일 프로젝트에서는 서비스 이름과 routeSegment가 각각 고유해야 한다. 내부 포트는 서비스 컨테이너별로 분리되므로 같아도 된다. 앱이 실제 UUID 경로에서 요청을 처리해야 하며 설정 변경 후 재빌드/재시작이 필요할 수 있다. 경로 보존·상태 확인 및 같은 origin의 제약은 [도메인·HTTPS](domains-and-tls.md)를 따른다.
 
@@ -54,13 +54,14 @@ managed MCP를 등록할 때 projectId와 serviceId를 지정할 수 있다. 서
 
 ## 인증서 재사용
 
-Nginx manifest의 tls.certificate와 tls.privateKey에 기존 `*.objlabs.team` 인증서 및 키의 경로를 지정한다. Dama는 파일을 읽거나 인증서를 발급하지 않고 설정에 경로만 출력한다. 갱신은 기존 win-acme/ACME 도구가 관리하며 갱신 후 Nginx를 검증·리로드해야 한다. 해당 인증서가 apps.objlabs.team을 실제 포함하는지는 배포 서버에서 확인한다.
+Nginx manifest의 tls.certificate와 tls.privateKey에 기존 `*.example.com` 인증서 및 키의 경로를 지정한다. Dama는 파일을 읽거나 인증서를 발급하지 않고 설정에 경로만 출력한다. 갱신은 기존 win-acme/ACME 도구가 관리하며 갱신 후 Nginx를 검증·리로드해야 한다. 해당 인증서가 apps.example.com을 실제 포함하는지는 배포 서버에서 확인한다.
 
 ```json
 {
+  "domain": "apps.example.com",
   "tls": {
-    "certificate": "/etc/nginx/ssl/objlabs.team-chain.pem",
-    "privateKey": "/etc/nginx/ssl/objlabs.team-key.pem"
+    "certificate": "/etc/nginx/ssl/example.com-chain.pem",
+    "privateKey": "/etc/nginx/ssl/example.com-key.pem"
   },
   "routes": [
     { "projectId": "00000000-0000-4000-8000-000000000001", "routeSegment": "", "upstreamPort": 32780 },

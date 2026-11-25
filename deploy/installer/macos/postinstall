@@ -1,0 +1,36 @@
+#!/bin/bash
+set -euo pipefail
+[[ "${3:-/}" == / ]] || { echo 'Install Dama on the current startup volume.' >&2; exit 1; }
+label=com.objlabs.dama
+plist="/Library/LaunchDaemons/$label.plist"
+app=/Applications/Dama.app
+account=$(/usr/bin/stat -f '%Su' /dev/console)
+[[ "$account" != root && "$account" != loginwindow && -n "$account" ]] || {
+    echo 'Sign in to the Mac account that should own Dama and run the installer.' >&2; exit 1;
+}
+user_home=$(/usr/bin/dscl . -read "/Users/$account" NFSHomeDirectory | /usr/bin/sed 's/^NFSHomeDirectory: //')
+[[ "$user_home" == /* && -d "$user_home" ]] || exit 1
+if [[ -f "$plist" ]]; then
+    existing=$(/usr/libexec/PlistBuddy -c 'Print :UserName' "$plist")
+    [[ "$account" == "$existing" ]] || { echo 'Update Dama from the account that originally installed it.' >&2; exit 1; }
+fi
+work=$(/usr/bin/mktemp -d /private/tmp/dama-install.XXXXXX)
+trap '/bin/rm -rf "$work"' EXIT
+tmp="$work/$label.plist"
+/usr/bin/plutil -create xml1 "$tmp"
+/usr/bin/plutil -insert Label -string "$label" "$tmp"
+/usr/bin/plutil -insert UserName -string "$account" "$tmp"
+/usr/bin/plutil -insert ProgramArguments -json "[\"$app/Contents/Resources/server\"]" "$tmp"
+/usr/bin/plutil -insert EnvironmentVariables -json '{}' "$tmp"
+/usr/bin/plutil -insert EnvironmentVariables.HOME -string "$user_home" "$tmp"
+/usr/bin/plutil -insert RunAtLoad -bool YES "$tmp"
+/usr/bin/plutil -insert KeepAlive -bool YES "$tmp"
+/usr/bin/plutil -insert ThrottleInterval -integer 10 "$tmp"
+/usr/bin/plutil -lint "$tmp"
+was_disabled=$(/bin/launchctl print-disabled system | /usr/bin/grep -F "\"$label\" => disabled" || true)
+if /bin/launchctl print "system/$label" >/dev/null 2>&1; then /bin/launchctl bootout "system/$label"; fi
+/usr/bin/install -m 0644 -o root -g wheel "$tmp" "$plist"
+if [[ -z "$was_disabled" ]]; then
+    /bin/launchctl enable "system/$label"
+    /bin/launchctl bootstrap system "$plist"
+fi

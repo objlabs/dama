@@ -4,6 +4,10 @@
 
 현재는 **로컬 개발용 관리 기반 v0.1**입니다. 실제 배포 플랫폼으로 운영할 준비가 된 상태는 아닙니다.
 
+## 설치 파일
+
+macOS와 Windows용 설치 파일을 빌드하고 부팅 자동 시작을 등록할 수 있습니다. [설치 파일 빌드와 사용](docs/installers.md)을 참고하세요.
+
 ## 실행
 
 Windows에서 WSL 준비부터 시작하려면 Dama 저장소의 관리자 PowerShell에서 다음 명령을 실행합니다. 기존 인증서 폴더를 입력하면 WSL 2, Dama 전용 Ubuntu, systemd와 Linux 패키지를 준비하고 Dama를 설치·검증합니다. 설치 중 Windows 계정 암호를 한 번 입력해 부팅 작업을 등록합니다. 재부팅이 필요하면 부팅 작업이 설치를 이어가고, 이후에도 로그인 전 WSL과 서비스를 시작하도록 구성합니다. [Windows 자동 설치](docs/windows-wsl-install.md)에 인증서 발급 옵션과 접속 범위를 정리했습니다.
@@ -12,7 +16,7 @@ Windows에서 WSL 준비부터 시작하려면 Dama 저장소의 관리자 Power
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 ```
 
-새 Linux VM에 운영용으로 설치할 때는 `sudo bash scripts/install-linux-vm.sh`를 사용합니다. 기존 인증서나 Route 53 와일드카드 발급을 연결하는 옵션은 [Linux VM 설치](docs/windows-vm-startup.md)를 확인하세요.
+새 Linux VM에 운영용으로 설치할 때는 `sudo bash scripts/install-linux-vm.sh --domain apps.example.com`를 사용합니다. 기존 인증서나 Route 53 DNS 검증 발급을 연결하는 옵션은 [Linux VM 설치](docs/windows-vm-startup.md)를 확인하세요.
 
 Node.js 22.11 이상이 필요합니다. 서버·브라우저·테스트 소스는 TypeScript이며 TypeScript와 Node 타입 정의를 개발 의존성으로 사용합니다. 실행 코드는 Node 내장 모듈과 SQLite를 사용하고 GitHub Actions는 필요하지 않습니다. Node.js 22의 SQLite 실험적 기능 경고가 표시될 수 있습니다.
 
@@ -103,12 +107,12 @@ MCP는 Streamable HTTP 연결 메타데이터를 등록합니다. 연결 상태�
 
 ## 기본 배포 주소와 Nginx 설정
 
-기본 주소는 `https://apps.objlabs.team/<프로젝트 UUID>/`로 설정했습니다. API와 대시보드에서 배포 예정 주소를 확인할 수 있습니다. URL이 표시되어도 실제로 배포된 것은 아닙니다.
+기본 배포 도메인을 입력하면 `https://apps.example.com/<프로젝트 UUID>/` 형태의 주소를 생성합니다. 로컬에서는 **공용 환경 → Nginx → 기본 배포 도메인**에서 선택적으로 지정합니다. API와 대시보드에서 배포 예정 주소를 확인할 수 있습니다. URL이 표시되어도 실제로 배포된 것은 아닙니다.
 
 Linux 배포 서버에서 사용할 Nginx 설정을 생성할 수 있습니다. 생성기는 stdout으로만 출력하고 서버 설정을 변경하지 않습니다.
 
 ```sh
-npm run --silent nginx:config -- --bootstrap > /tmp/dama-apps-bootstrap.conf
+npm run --silent nginx:config -- --bootstrap --domain apps.example.com > /tmp/dama-apps-bootstrap.conf
 npm run --silent nginx:config -- deploy/routes.example.json > /tmp/dama-apps.conf
 ```
 

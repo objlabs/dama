@@ -2,17 +2,17 @@
 
 ## 확정한 주소
 
-기본 접속 주소는 `https://apps.objlabs.team/<프로젝트 UUID>/`이다. `*` 서브도메인을 만들지 않는다. 끝 슬래시 없는 접속은 쿼리를 보존하여 슬래시 있는 주소로 308 리다이렉트한다. 이 주소는 배포마다 바뀌지 않는다. 관리 API는 basePath와 defaultUrl을 반환하고 대시보드에서 배포 예정 주소로 표시한다.
+사용자가 기본 배포 도메인으로 `apps.example.com`을 선택하면 접속 주소는 `https://apps.example.com/<프로젝트 UUID>/` 형태다. 로컬 관리 화면은 도메인 없이도 열린다. `*` 서브도메인을 만들지 않는다. 끝 슬래시 없는 접속은 쿼리를 보존하여 슬래시 있는 주소로 308 리다이렉트한다. 이 주소는 배포마다 바뀌지 않는다. 관리 API는 basePath와 defaultUrl을 반환하고 대시보드에서 배포 예정 주소로 표시한다.
 
 현재 Project는 기존 코드의 배포 단위다. 모노레포의 Project/Service 분리 후에는 프로젝트 UUID 아래 서비스별 경로 또는 서비스별 도메인을 명시적으로 매핑해야 한다. 여러 서비스를 같은 UUID 경로의 루트에 중복 배정하지 않는다. 서비스별 routeSegment와 Project 참조를 구현했다. 상세는 [모노레포 설계](monorepo.md)를 따른다.
 
 ## 기존 서버 인증서 재사용
 
-현재 운영 서버는 Route53 수동 DNS와 기존 `*.objlabs.team` 인증서를 사용한다. `apps.objlabs.team`도 이 인증서 범위에 포함된다. 새 인증서를 중복 발급하지 않고 Nginx manifest의 `tls.certificate`·`tls.privateKey`에 실제 경로를 지정하는 방식을 우선한다. 아래 Certbot 절차는 새 Linux 환경을 위한 선택지다. [모노레포 운영](monorepo.md)의 예시를 참고한다.
+이미 `*.example.com` 인증서가 있다면 `apps.example.com`에서 사용할 수 있다. 새 인증서를 중복 발급하지 않고 Nginx manifest의 `tls.certificate`·`tls.privateKey`에 실제 경로를 지정하는 방식을 우선한다. 아래 Certbot 절차는 새 Linux 환경을 위한 선택지다. [모노레포 운영](monorepo.md)의 예시를 참고한다.
 
 ## DNS와 인증서
 
-DNS는 사용자가 수동으로 `apps.objlabs.team`의 A 레코드를 배포 서버의 공인 IPv4로 설정한다. IPv6를 실제 제공하는 경우에만 AAAA도 설정한다. 이 접속 형태에는 `*.apps.objlabs.team` 인증서가 필요하지 않고 `apps.objlabs.team` 개별 인증서로 충분하다.
+DNS는 사용자가 수동으로 `apps.example.com`의 A 레코드를 배포 서버의 공인 IPv4로 설정한다. IPv6를 실제 제공하는 경우에만 AAAA도 설정한다. 이 접속 형태에는 `*.apps.example.com` 인증서가 필요하지 않고 `apps.example.com` 개별 인증서로 충분하다.
 
 Linux Nginx에서는 Certbot의 ACME HTTP-01 webroot 검증을 기본 운영 방식으로 사용한다. 검증을 위해 외부에서 포트 80과 `/.well-known/acme-challenge/`에 접속 가능해야 한다. HTTPS 서비스는 포트 443을 사용한다. DNS API와 수동 TXT 등록은 필요하지 않다.
 
@@ -34,7 +34,7 @@ Windows에서 쓰던 win-acme도 같은 ACME 방식이다. Windows 운영을 계
 2. 인증서가 없는 상태에서 사용할 HTTP 전용 설정을 생성한다.
 
 ```sh
-npm run --silent nginx:config -- --bootstrap > /tmp/dama-apps-bootstrap.conf
+npm run --silent nginx:config -- --bootstrap --domain apps.example.com > /tmp/dama-apps-bootstrap.conf
 ```
 
 출력은 Nginx `http {}` 안에서 읽는 설정이다. 배포판의 활성 include 디렉터리에 설치하되 같은 hostname을 처리하는 기존 server 블록과 충돌하지 않게 한다. **`nginx -t` 성공 후** reload한다. 실패하면 이전 설정을 복원한다.
@@ -42,7 +42,7 @@ npm run --silent nginx:config -- --bootstrap > /tmp/dama-apps-bootstrap.conf
 3. 서버에서 개별 도메인 인증서를 발급한다. 이메일과 약관 등은 운영자가 Certbot 안내에 따라 입력한다.
 
 ```sh
-sudo certbot certonly --webroot -w /var/www/dama-acme -d apps.objlabs.team
+sudo certbot certonly --webroot -w /var/www/dama-acme -d apps.example.com
 ```
 
 먼저 ACME staging 환경으로 검증 흐름을 확인하는 것이 좋다. staging 인증서는 공개 브라우저 접속용이 아니므로 이후 production 인증서로 바꾼다.
@@ -56,21 +56,21 @@ docker port dama-app-example 3000/tcp
 
 `docker port` 결과의 호스트 포트가 Nginx upstreamPort다. `127.0.0.1` 공개이므로 외부에서 컨테이너에 직접 접속하지 않는다. 컨테이너 내부 앱은 컨테이너 네트워크에서 요청을 받을 수 있도록 listen해야 한다. 볼륨과 환경변수는 앱에 맞게 추가한다. 재생성 시 할당 포트가 바뀔 수 있으므로 매번 조회하고 반영한다.
 
-5. `deploy/routes.example.json`을 복사해 실제 Dama 프로젝트 UUID와 실제 호스트 포트를 입력한다. 파일의 모든 항목이 이 호스트의 전체 경로 목록이다. 한 항목만 남기면 나머지 경로가 출력에서 사라진다.
+5. `deploy/routes.example.json`을 복사해 실제 Dama 프로젝트 UUID와 실제 호스트 포트를 입력한다. `domain`에 실제 호스트 이름을 입력한다. `routes`의 모든 항목이 이 호스트의 전체 경로 목록이다. 한 항목만 남기면 나머지 경로가 출력에서 사라진다.
 
 ```sh
 npm run --silent nginx:config -- /path/to/routes.json > /tmp/dama-apps.conf
 ```
 
-기존 bootstrap 설정을 이 설정으로 교체한 뒤 `nginx -t`와 reload를 수행한다. manifest에서 기존 인증서 경로를 지정하지 않으면 `/etc/letsencrypt/live/apps.objlabs.team/`을 사용한다. 예시 manifest에는 기존 인증서 재사용 경로가 들어 있으므로 실제 경로로 바꿔야 한다. Certbot의 실제 저장 경로가 다르면 설정을 조정해야 한다. 현재 생성기는 인증서 파일 존재·만료나 앱 상태를 검증하지 않는다.
+기존 bootstrap 설정을 이 설정으로 교체한 뒤 `nginx -t`와 reload를 수행한다. manifest에서 기존 인증서 경로를 지정하지 않으면 `/etc/letsencrypt/live/apps.example.com/`을 사용한다. 예시 manifest에는 기존 인증서 재사용 경로가 들어 있으므로 실제 경로로 바꿔야 한다. Certbot의 실제 저장 경로가 다르면 설정을 조정해야 한다. 현재 생성기는 인증서 파일 존재·만료나 앱 상태를 검증하지 않는다.
 
-6. `https://apps.objlabs.team/<실제 UUID>/`와 정적 파일, 로그인 콜백, WebSocket/MCP 스트리밍을 확인한다. 기존 앱에 영향을 주지 않도록 컨테이너 직접 상태 확인 후 트래픽을 연결한다.
+6. `https://apps.example.com/<실제 UUID>/`와 정적 파일, 로그인 콜백, WebSocket/MCP 스트리밍을 확인한다. 기존 앱에 영향을 주지 않도록 컨테이너 직접 상태 확인 후 트래픽을 연결한다.
 
 ## 갱신
 
 VM에서는 **매일 오전 4시(한국 시간)**에 Certbot이 갱신 시점을 확인한다. 만료가 가까워져 갱신 대상이 된 인증서를 발급하며, VM이 꺼져 예약을 놓친 경우에는 다음 부팅 시 확인한다. 갱신에 성공하면 deploy hook이 `nginx -t`를 실행하고, 검사를 통과하면 Nginx를 리로드한다. [Certbot 갱신 방식](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates) · [systemd 타이머](https://www.freedesktop.org/software/systemd/man/latest/systemd.timer.html)
 
-적용 전에 `sudo certbot certificates`로 VM의 Certbot이 대상 인증서를 관리하는지 확인하고, Nginx의 인증서 경로를 해당 목록에 표시된 `fullchain.pem`과 `privkey.pem`으로 연결한다. `*.objlabs.team`은 Route 53 DNS-01 플러그인과 타이머 실행 계정의 AWS 권한이 필요하다. [Route 53 플러그인](https://certbot-dns-route53.readthedocs.io/en/stable/)
+적용 전에 `sudo certbot certificates`로 VM의 Certbot이 대상 인증서를 관리하는지 확인하고, Nginx의 인증서 경로를 해당 목록에 표시된 `fullchain.pem`과 `privkey.pem`으로 연결한다. `*.example.com`은 Route 53 DNS-01 플러그인과 타이머 실행 계정의 AWS 권한이 필요하다. [Route 53 플러그인](https://certbot-dns-route53.readthedocs.io/en/stable/)
 
 아래는 Debian/Ubuntu 패키지가 제공하는 `certbot.timer`를 사용하는 설치 예시다. `systemctl cat certbot.timer`로 대상 타이머를 확인하고, Dama 저장소 루트에서 실행한다. 기존 일정은 이 타이머의 drop-in으로 조정한다.
 

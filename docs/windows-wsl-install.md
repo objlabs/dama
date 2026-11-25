@@ -6,12 +6,12 @@ Windows 10 빌드 19041 이상 또는 Windows 11에서 Dama 소스를 내려받�
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 ```
 
-설치 화면에서 인증서 폴더와 현재 Windows 계정의 암호를 입력한다. 계정 암호는 부팅 시 로그인 화면에서도 작업을 실행하기 위해 Windows 작업 스케줄러에 전달한다. Windows Hello PIN과 계정 암호는 구분된다. 설치 상태 JSON에는 암호를 저장하지 않는다. [Microsoft 작업 실행 계정 설명](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks)
+설치 화면에서 배포용 DNS 이름, 인증서 폴더와 현재 Windows 계정의 암호를 입력한다. 계정 암호는 부팅 시 로그인 화면에서도 작업을 실행하기 위해 Windows 작업 스케줄러에 전달한다. Windows Hello PIN과 계정 암호는 구분된다. 설치 상태 JSON에는 암호를 저장하지 않는다. [Microsoft 작업 실행 계정 설명](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks)
 
-인증서 폴더에는 `apps.objlabs.team`을 포함하는 인증서의 `fullchain.pem`과 `privkey.pem`이 있어야 한다. 경로를 미리 지정할 수도 있다.
+인증서 폴더에는 입력한 배포 도메인을 포함하는 인증서의 `fullchain.pem`과 `privkey.pem`이 있어야 한다. 경로를 미리 지정할 수도 있다.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -CertDirectory "C:\certificates\objlabs.team"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1 -DeploymentDomain apps.example.com -CertDirectory "C:\certificates\example.com"
 ```
 
 설치 프로그램은 필요한 파일을 로컬에 복사하고 다음 작업을 진행한다.
@@ -28,7 +28,7 @@ PowerShell 구문 검사와 모의 실행에서 부팅 작업 등록, 암호 재
 
 ## 접속과 포트
 
-관리 화면은 Windows의 `http://127.0.0.1:3100`으로 연다. 배포 주소는 `https://apps.objlabs.team/<app_id>`를 사용한다. 공개 DNS와 공유기/NAT의 포트 전달은 Windows 서버 IP로 연결한다.
+관리 화면은 Windows의 `http://127.0.0.1:3100`으로 연다. 배포 도메인을 `apps.example.com`으로 선택했다면 배포 주소는 `https://apps.example.com/<app_id>`이다. 공개 DNS와 공유기/NAT의 포트 전달은 Windows 서버 IP로 연결한다.
 
 설치기는 Windows의 TCP 80·443을 WSL Nginx로 연결하고 `Dama-WSL-TCP-80`, `Dama-WSL-TCP-443` 방화벽 규칙을 만든다. 기존 Windows Nginx 등과 충돌하면 설치를 중단한다. 서버에 별도로 할당한 IPv4 주소를 쓰려면 `-ListenAddress 192.168.0.20`을 지정한다. 기본값은 `0.0.0.0`이다. [Microsoft WSL 네트워크 설명](https://learn.microsoft.com/en-us/windows/wsl/networking)
 

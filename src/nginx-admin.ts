@@ -8,7 +8,6 @@ import { networkInterfaces } from 'node:os';
 import { promisify } from 'node:util';
 import { allocateHostPort } from './deployment-ports.js';
 import { nginxDomain, nginxSitesConfig, productionService } from './nginx-sites.js';
-import { deploymentHost } from './routing.js';
 import type { Store } from './store.js';
 import type { JsonObject, NginxSite, NginxState } from './types.js';
 import { fail, HttpError, text } from './validation.js';
@@ -263,7 +262,7 @@ export function createNginxAdmin(store: Store, options: { local: boolean; direct
     save: (body: JsonObject) => perform(async () => {
       const domain = nginxDomain(body.domain);
       const previous = body.previous ? nginxDomain(body.previous) : domain;
-      if (!local && domain === deploymentHost) fail('기본 배포 도메인은 기존 Nginx 설정에서 관리합니다.');
+      if (!local && domain === store.getDeploymentDomain()) fail('기본 배포 도메인은 기존 Nginx 설정에서 관리합니다.');
       const settings = store.nginxState();
       const target = text(body.target, '연결 대상');
       let port = 0;

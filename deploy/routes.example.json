@@ -1,7 +1,8 @@
 {
+  "domain": "apps.example.com",
   "tls": {
-    "certificate": "/etc/nginx/ssl/objlabs.team-chain.pem",
-    "privateKey": "/etc/nginx/ssl/objlabs.team-key.pem"
+    "certificate": "/etc/nginx/ssl/example.com-chain.pem",
+    "privateKey": "/etc/nginx/ssl/example.com-key.pem"
   },
   "routes": [
     { "projectId": "00000000-0000-4000-8000-000000000001", "routeSegment": "", "upstreamPort": 32780 },

@@ -2,6 +2,7 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
+    [string] $DeploymentDomain,
     [string] $CertDirectory,
     [string] $Route53Email,
     [string] $AwsCredentialsFile,
@@ -35,6 +36,16 @@ function ConvertTo-LinuxPath {
     return ($output -join "`n").Trim()
 }
 
+function Confirm-DeploymentDomain {
+    param([string] $Domain)
+    $domainName = $Domain.Trim().ToLowerInvariant()
+    $label = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
+    if ($domainName.Length -gt 253 -or $domainName -notmatch "^(?:$label\.)+$label$" -or $domainName -match '^[0-9.]+$') {
+        throw 'Enter a deployment DNS hostname without a scheme, port or path.'
+    }
+    return $domainName
+}
+
 function Register-DamaTask {
     param([string] $Name, [string] $Script, [pscredential] $Credential)
     $action = New-ScheduledTaskAction -Execute $powershell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Script`""
@@ -61,10 +72,17 @@ if ($Resume -or $RepairStartup) {
     $Route53Email = $configuration.Route53Email
     $AwsCredentialsFile = $configuration.AwsCredentialsFile
     if ($configuration.PSObject.Properties['ListenAddress']) { $ListenAddress = $configuration.ListenAddress }
+    if ($configuration.PSObject.Properties['DeploymentDomain'] -and $configuration.DeploymentDomain) {
+        $DeploymentDomain = Confirm-DeploymentDomain $configuration.DeploymentDomain
+    } elseif (-not $RepairStartup -and $DeploymentDomain) {
+        $DeploymentDomain = Confirm-DeploymentDomain $DeploymentDomain
+    }
 } else {
     if (Test-Path -LiteralPath $stateFile) {
         throw 'An installation is already staged. Run this script with -Resume to continue it.'
     }
+    if (-not $DeploymentDomain) { $DeploymentDomain = Read-Host 'Deployment domain (example: apps.example.com)' }
+    $DeploymentDomain = Confirm-DeploymentDomain $DeploymentDomain
     if (-not $CertDirectory -and -not $Route53Email) {
         $CertDirectory = Read-Host 'Folder containing fullchain.pem and privkey.pem (Windows path)'
     }
@@ -88,10 +106,18 @@ if ($Resume -or $RepairStartup) {
         Copy-Item -LiteralPath (Join-Path $source $name) -Destination $stateDirectory -Recurse -Force
     }
     @{
+        DeploymentDomain = $DeploymentDomain
         CertDirectory = $CertDirectory
         Route53Email = $Route53Email
         AwsCredentialsFile = $AwsCredentialsFile
     } | ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
+}
+
+if (Test-Path -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'prebuilt/src/server.js')) {
+    $compiled = Join-Path (Split-Path $PSScriptRoot -Parent) 'prebuilt'
+    if ($compiled -ne (Join-Path $stateDirectory 'prebuilt')) {
+        Copy-Item -LiteralPath $compiled -Destination $stateDirectory -Recurse -Force
+    }
 }
 
 # Stage every file needed by a noninteractive boot before registering the tasks.
@@ -168,6 +194,7 @@ if (-not $bootTasksRegistered -or $RepairStartup) {
     $bootTasksRegistered = $true
 }
 @{
+    DeploymentDomain = $DeploymentDomain
     CertDirectory = $CertDirectory
     Route53Email = $Route53Email
     AwsCredentialsFile = $AwsCredentialsFile
@@ -246,6 +273,8 @@ try {
     Invoke-Wsl -Arguments @('-d', $distribution, '-u', 'root', '--exec', 'bash', '-c', 'for attempt in {1..60}; do test -d /run/systemd/system && exit 0; sleep 1; done; exit 1')
 
     $installArguments = @('-d', $distribution, '-u', 'root', '--exec', 'bash', "$linuxSource/scripts/setup-wsl.sh", 'install', $linuxSource)
+    if (-not $DeploymentDomain) { throw 'Resume with -DeploymentDomain for a setup staged by an older installer.' }
+    $installArguments += $DeploymentDomain
     if ($Route53Email) {
         $installArguments += @('route53', $Route53Email, (ConvertTo-LinuxPath $AwsCredentialsFile))
     } else {

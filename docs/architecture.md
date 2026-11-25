@@ -57,7 +57,7 @@ MCP를 등록했다고 연결되거나 도구를 실행할 수 있는 것은 아
 
 ## 배포 수명주기 — 후속 구현
 
-기본 주소는 `https://apps.objlabs.team/<프로젝트 UUID>/`로 확정했다. 기본 호스트의 개별 인증서와 ACME HTTP-01 검증을 사용한다. 기존 서버는 와일드카드 인증서 경로를 지정해 재사용하고, 신규 Linux 설치는 Certbot, Windows 기존 환경은 win-acme를 활용할 수 있다. UUID 경로는 업스트림에 보존하며 앱의 base path 지원이 필요하다. 구현된 주소 생성 및 Nginx 설정 출력과 운영 절차는 [도메인·HTTPS 운영](domains-and-tls.md)을 따른다. 커밋을 직접 등록하면 배포 워커가 빌드부터 Nginx 전환까지 처리한다. 인증서 발급과 갱신은 기존 ACME 도구에서 관리한다.
+사용자가 설정한 기본 배포 도메인이 `apps.example.com`이라면 기본 주소는 `https://apps.example.com/<프로젝트 UUID>/`다. 기본 호스트의 개별 인증서와 ACME HTTP-01 검증을 사용한다. 기존 서버는 와일드카드 인증서 경로를 지정해 재사용하고, 신규 Linux 설치는 Certbot, Windows 기존 환경은 win-acme를 활용할 수 있다. UUID 경로는 업스트림에 보존하며 앱의 base path 지원이 필요하다. 구현된 주소 생성 및 Nginx 설정 출력과 운영 절차는 [도메인·HTTPS 운영](domains-and-tls.md)을 따른다. 커밋을 직접 등록하면 배포 워커가 빌드부터 Nginx 전환까지 처리한다. 인증서 발급과 갱신은 기존 ACME 도구에서 관리한다.
 
 1. GitHub App 또는 저장소 웹훅을 수신하고 서명·이벤트 id를 검증한다. GitHub Actions에 의존하지 않는다.
 2. 저장소·브랜치 규칙을 확인하고 정확한 커밋 SHA로 배포 작업을 생성한다. 중복 이벤트를 제거한다.

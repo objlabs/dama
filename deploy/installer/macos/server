@@ -1,0 +1,11 @@
+#!/bin/bash
+set -euo pipefail
+export PATH="$HOME/.docker/bin:/Applications/Docker.app/Contents/Resources/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+root='/Applications/Dama.app/Contents/Resources'
+data="$HOME/Library/Application Support/Dama/data"
+umask 077
+mkdir -p "$data"
+data=$(cd "$data" && pwd -P)
+export DAMA_DB="$data/dama.sqlite" PORT=3100
+cd "$root"
+exec "$root/bin/node" --experimental-sqlite "$root/dist/src/server.js"

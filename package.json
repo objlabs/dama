@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.json && tsc --project tsconfig.browser.json && node dist/scripts/copy-assets.js",
+    "build:installers": "bash scripts/build-installers.sh",
     "check": "tsc --project tsconfig.json --noEmit && tsc --project tsconfig.browser.json --noEmit",
     "prestart": "npm run build",
     "start": "node --experimental-sqlite dist/src/server.js",

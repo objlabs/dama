@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+[[ $EUID == 0 ]] || { echo 'Administrator approval is required.' >&2; exit 1; }
+label=com.objlabs.dama
+service="system/$label"
+plist="/Library/LaunchDaemons/$label.plist"
+case "${1:-}" in
+    start)
+        /bin/launchctl enable "$service"
+        if ! /bin/launchctl print "$service" >/dev/null 2>&1; then /bin/launchctl bootstrap system "$plist"; fi
+        ;;
+    stop|uninstall)
+        /bin/launchctl disable "$service"
+        if /bin/launchctl print "$service" >/dev/null 2>&1; then /bin/launchctl bootout "$service"; fi
+        if [[ "$1" == uninstall ]]; then
+            /bin/rm -f "$plist"
+            /bin/rm -rf /Applications/Dama.app
+            /usr/sbin/pkgutil --forget "$label" >/dev/null
+            # Clear the override so that a later install starts normally.
+            /bin/launchctl enable "$service"
+        fi
+        ;;
+    *) exit 2 ;;
+esac

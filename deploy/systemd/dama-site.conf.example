@@ -6,7 +6,7 @@ map $http_upgrade $dama_connection_upgrade {
 
 server {
     listen 80;
-    server_name apps.objlabs.team;
+    server_name @DOMAIN@;
 
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/dama-acme;
@@ -14,13 +14,13 @@ server {
     }
 
     location / {
-        return 308 https://apps.objlabs.team$request_uri;
+        return 308 https://@DOMAIN@$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name apps.objlabs.team;
+    server_name @DOMAIN@;
 
     ssl_certificate "@CERTIFICATE@";
     ssl_certificate_key "@PRIVATE_KEY@";

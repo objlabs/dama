@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-export const schemaVersion = 10;
+export const schemaVersion = 11;
 
 export function migrateDatabase(db: DatabaseSync): void {
   db.exec('BEGIN IMMEDIATE');
@@ -111,6 +111,13 @@ export function migrateDatabase(db: DatabaseSync): void {
         db.exec("ALTER TABLE nginx_state ADD COLUMN bindAddress TEXT NOT NULL DEFAULT '127.0.0.1'");
       }
     }
+    if (version < 11) db.exec(`
+      CREATE TABLE IF NOT EXISTS deployment_settings (
+        id INTEGER PRIMARY KEY CHECK(id=1),
+        domain TEXT NOT NULL DEFAULT ''
+      );
+      INSERT OR IGNORE INTO deployment_settings(id) VALUES(1);
+    `);
     db.exec(`PRAGMA user_version = ${schemaVersion}`);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }

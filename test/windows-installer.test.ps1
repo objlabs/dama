@@ -130,7 +130,14 @@ function netsh.exe {
         $global:LASTEXITCODE=1
     }
 }
-function curl.exe { $global:LASTEXITCODE=0; 'dama-nginx-ready' }
+function curl.exe {
+    if ($args -notcontains 'apps.example.test:443:127.0.0.1' -or
+        $args -notcontains 'https://apps.example.test/_dama/ready') {
+        throw 'HTTPS readiness did not use the configured domain.'
+    }
+    $global:LASTEXITCODE=0
+    'dama-nginx-ready'
+}
 
 try {
     New-Item -ItemType Directory "$fixture/scripts", "$fixture/cert" -Force > $null
@@ -157,11 +164,12 @@ try {
         }
         [IO.File]::WriteAllText("$fixture/scripts/$file", $source)
     }
-    & "$fixture/scripts/install-windows.ps1" -CertDirectory "$fixture/cert"
+    & "$fixture/scripts/install-windows.ps1" -DeploymentDomain 'Apps.Example.Test' -CertDirectory "$fixture/cert"
     if (Test-Path $env:DAMA_TEST_COMMANDS) { throw 'WSL launched before the required reboot.' }
     if ($global:DamaTestEvents -notcontains 'register Dama-WSL' -or $global:DamaTestEvents -notcontains 'register Dama-Install-Resume') { throw 'Both boot tasks must be registered before reboot.' }
     $settingsPath = Join-Path $env:LOCALAPPDATA 'Dama/setup/settings.json'
     $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    if ($settings.DeploymentDomain -ne 'apps.example.test') { throw 'Deployment domain must be normalized and staged before reboot.' }
     if (-not (Test-Path (Join-Path $settings.CertDirectory 'privkey.pem'))) { throw 'Certificate must be staged before reboot.' }
     if ((Get-Content $settingsPath -Raw) -match 'synthetic-test-password') { throw 'Windows password leaked into settings.' }
     'PASS boot tasks and local inputs are prepared before the required reboot'
@@ -171,7 +179,9 @@ try {
     if ($global:DamaTestPasswordPrompts -ne 1) { throw 'Resume must run without a password prompt.' }
     $commands = Get-Content $env:DAMA_TEST_COMMANDS -Raw
     if ($commands -notmatch '--import\|Dama' -or $commands -notmatch '--version\|2') { throw 'WSL 2 import is missing.' }
-    if ($commands -notmatch 'install\|/mnt/c/Dama setup\|certificate\|/mnt/c/Dama setup') { throw 'Spaced paths were not preserved as arguments.' }
+    if ($commands -notmatch 'install\|/mnt/c/Dama setup\|apps\.example\.test\|certificate\|/mnt/c/Dama setup') {
+        throw 'The deployment domain and spaced paths were not preserved as arguments.'
+    }
     if ($global:DamaTestEvents -notcontains 'remove Dama-Install-Resume') { throw 'Setup continuation was not removed after verified completion.' }
     'PASS noninteractive boot resume imports WSL 2 and completes without further credentials'
 

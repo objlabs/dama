@@ -1,0 +1,39 @@
+#!/bin/bash
+set -u
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+url=http://127.0.0.1:3100
+if curl --noproxy '*' -fsS --max-time 2 "$url/api/health" >/dev/null 2>&1; then
+    status='Dama is responding'
+else
+    status='Dama is stopped or starting'
+fi
+choice=$(osascript - "$status" <<'APPLESCRIPT'
+on run argv
+    set choices to {"Open dashboard", "Start Dama and enable startup", "Stop Dama and disable startup", "Reveal data directory", "Uninstall Dama"}
+    set selected to choose from list choices with title "Dama" with prompt (item 1 of argv) default items {item 1 of choices}
+    if selected is false then return ""
+    return item 1 of selected
+end run
+APPLESCRIPT
+) || exit 0
+elevated() {
+    osascript - "$1" <<'APPLESCRIPT'
+on run argv
+    set actionName to item 1 of argv
+    if actionName is "uninstall" then
+        display dialog "Remove Dama and its startup service? Your Dama data and Docker containers will be kept." buttons {"Cancel", "Uninstall"} default button "Cancel" cancel button "Cancel" with title "Dama"
+    end if
+    do shell script quoted form of "/Applications/Dama.app/Contents/Resources/manage-service" & " " & quoted form of actionName with administrator privileges
+end run
+APPLESCRIPT
+}
+case "$choice" in
+    'Open dashboard') open "$url" ;;
+    'Start Dama and enable startup') elevated start ;;
+    'Stop Dama and disable startup') elevated stop ;;
+    'Reveal data directory')
+        base="$HOME/Library/Application Support/Dama"
+        mkdir -p "$base/data" && open "$base/data"
+        ;;
+    'Uninstall Dama') elevated uninstall ;;
+esac

@@ -3,13 +3,15 @@ import type { ForgejoSettings, NginxSite } from './types.js';
 import type { Project, ProjectInput, ProjectView, GitAuth, GitAuthSummary, Service, ServiceInput, ServiceRow, McpInput, McpServer, Binding, BindingInput, Activity, Snapshot, ResourceType, BuildJob, BuildJobSummary, ClaimedBuild, Release, BuildEvidence, DeploymentPlan, SharedResource, SharedKind, DeployEnvironment } from './types.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { HttpError } from './validation.js';
-import { projectAddress, serviceAddress } from './routing.js';
+import { deploymentDomain, HttpError } from './validation.js';
+import { configuredDeploymentDomain, projectAddress, serviceAddress } from './routing.js';
 import { migrateDatabase, schemaVersion } from './migrations.js';
 import { deploymentPlan } from './deployment-plan.js';
 import { gitSecrets } from './git-secrets.js';
 
 export function createStore(path: string) {
+  const installedDomain = configuredDeploymentDomain();
+  const domainEditable = !installedDomain && !process.env.DAMA_NGINX_CONFIG;
   const db = new DatabaseSync(path);
   const secrets = gitSecrets(path);
   if ((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version > schemaVersion) { db.close(); throw new Error('현재 앱보다 새로운 데이터베이스 버전입니다.'); }
@@ -57,6 +59,7 @@ export function createStore(path: string) {
   // SQLite returns untyped column maps. Keep schema assertions at this boundary.
   const queryOne = <T>(sql: string, ...params: SupportedValueType[]): T | undefined => db.prepare(sql).get(...params) as unknown as T | undefined;
   const queryAll = <T>(sql: string): T[] => db.prepare(sql).all() as unknown as T[];
+  const getDeploymentDomain = () => installedDomain || queryOne<{ domain: string }>('SELECT domain FROM deployment_settings WHERE id=1')!.domain;
   const getProject = (id: string) => queryOne<Project>('SELECT * FROM projects WHERE id = ?', id);
   const getMcp = (id: string) => queryOne<Omit<McpServer, 'status'>>('SELECT * FROM mcps WHERE id = ?', id);
   const getService = (id: string) => queryOne<ServiceRow>('SELECT * FROM services WHERE id = ?', id);
@@ -64,7 +67,7 @@ export function createStore(path: string) {
     const { deployment, ...rest } = service;
     const settings = JSON.parse(deployment) as Service['deployment'];
     return { ...rest, ...(settings?.environment ? { deployment: settings } : {}),
-      watchPaths: JSON.parse(service.watchPaths) as string[], ...serviceAddress(service.projectId, service.routeSegment) };
+      watchPaths: JSON.parse(service.watchPaths) as string[], ...serviceAddress(service.projectId, service.routeSegment, getDeploymentDomain()) };
   };
   const withEvidence = <T extends { evidence: string | null }>(row: T) => ({
     ...row, evidence: row.evidence ? JSON.parse(row.evidence) as BuildEvidence : null
@@ -78,7 +81,7 @@ export function createStore(path: string) {
     return row ? { provider: row.provider, username: row.username } : null;
   }
   function projectView(record: Project): ProjectView {
-    return { ...record, ...projectAddress(record.id), gitAuth: authSummary(record.id) };
+    return { ...record, ...projectAddress(record.id, getDeploymentDomain()), gitAuth: authSummary(record.id) };
   }
   const hasSecrets = () => Boolean(queryOne('SELECT id FROM shared_resources UNION ALL SELECT projectId FROM project_git_auth UNION ALL SELECT id FROM forgejo_settings WHERE ciphertext IS NOT NULL LIMIT 1'));
   const forgejoSettings = () => queryOne<ForgejoSettings>('SELECT dataPath, port, owner FROM forgejo_settings WHERE id=1') ?? null;
@@ -114,6 +117,13 @@ export function createStore(path: string) {
     } else if (project.kind !== 'mcp') throw new HttpError(400, 'MCP 유형 프로젝트 또는 MCP 서비스를 선택하세요.');
   }
   return {
+    getDeploymentDomain,
+    setDeploymentDomain(value: unknown) {
+      if (!domainEditable) throw new HttpError(409, '운영 서버의 기본 도메인은 설치 설정에서 관리합니다.');
+      const domain = deploymentDomain(value, true);
+      db.prepare('UPDATE deployment_settings SET domain=? WHERE id=1').run(domain);
+      return domain;
+    },
     nginxBindAddress() {
       return queryOne<{ bindAddress: string }>('SELECT bindAddress FROM nginx_state WHERE id=1')!.bindAddress;
     },
@@ -161,6 +171,7 @@ export function createStore(path: string) {
     },
     snapshot(): Snapshot {
       return {
+        deploymentDomain: { domain: getDeploymentDomain(), editable: domainEditable },
         projects: queryAll<Project>('SELECT * FROM projects ORDER BY createdAt DESC, rowid DESC').map(projectView),
         services: queryAll<ServiceRow>('SELECT * FROM services ORDER BY createdAt, rowid').map(formatService),
         mcps: queryAll<Omit<McpServer, 'status'>>('SELECT * FROM mcps ORDER BY createdAt DESC, rowid DESC').map(mcp => ({ ...mcp, status: 'unverified' })),

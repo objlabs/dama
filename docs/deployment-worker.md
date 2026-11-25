@@ -4,7 +4,7 @@ Dama의 서비스 화면에서 배포 계획을 열고 40자리 Git 커밋 SHA�
 
 ## 기존 Nginx 연결
 
-아래 경로는 예시다. 현재 운영 중인 `apps.objlabs.team` HTTPS 서버 블록에 Dama 전용 파일을 include한다. 다른 가상 호스트와 와일드카드 인증서 설정은 기존 Nginx에서 관리한다.
+아래 경로는 예시다. 사용자가 선택한 도메인(예시 `apps.example.com`)의 HTTPS 서버 블록에 Dama 전용 파일을 include한다. 다른 가상 호스트와 와일드카드 인증서 설정은 기존 Nginx에서 관리한다.
 
 ```nginx
 # http 블록에 한 번 선언한다. 기존에 같은 변수가 있으면 그 선언을 사용한다.
@@ -13,7 +13,7 @@ map $http_upgrade $dama_connection_upgrade {
     '' close;
 }
 
-# apps.objlabs.team의 기존 HTTPS server 블록 안에 추가한다.
+# apps.example.com의 기존 HTTPS server 블록 안에 추가한다.
 include /etc/nginx/dama/routes.conf;
 ```
 
@@ -29,7 +29,8 @@ npm run build
 export DAMA_DB=/path/to/dama/data/dama.sqlite
 export DAMA_NGINX_CONFIG=/etc/nginx/nginx.conf
 export DAMA_NGINX_INCLUDE=/etc/nginx/dama/routes.conf
-export DAMA_NGINX_PROBE=https://apps.objlabs.team
+export DAMA_DEPLOYMENT_DOMAIN=apps.example.com
+export DAMA_NGINX_PROBE=https://apps.example.com
 npm run deploy:worker -- --watch
 ```
 

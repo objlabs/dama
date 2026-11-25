@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createStore } from './store.js';
 import { deployNext, recoverDeployment, restoreAtStartup, waitForDeploymentDependencies } from './deploy-worker.js';
-import { deploymentHost } from './routing.js';
+import { configuredDeploymentDomain } from './routing.js';
 
 async function main(): Promise<void> {
   const mode = process.argv[2] ?? '--once';
@@ -12,7 +12,9 @@ async function main(): Promise<void> {
   const watching = mode === '--watch' || mode === '--boot-watch';
   const { DAMA_NGINX_INCLUDE, DAMA_NGINX_CONFIG, DAMA_NGINX_PROBE } = process.env;
   if (!DAMA_NGINX_INCLUDE || !DAMA_NGINX_CONFIG) throw new Error('DAMA_NGINX_INCLUDE과 DAMA_NGINX_CONFIG를 지정하세요.');
-  const probe = new URL(DAMA_NGINX_PROBE ?? `https://${deploymentHost}`);
+  const domain = configuredDeploymentDomain();
+  if (!DAMA_NGINX_PROBE && !domain) throw new Error('DAMA_DEPLOYMENT_DOMAIN 또는 DAMA_NGINX_PROBE를 지정하세요.');
+  const probe = new URL(DAMA_NGINX_PROBE || `https://${domain}`);
   if (probe.href !== probe.origin + '/' || !(probe.protocol === 'https:' || probe.protocol === 'http:' && probe.hostname === '127.0.0.1')) {
     throw new Error('검증 주소는 HTTPS origin 또는 로컬 127.0.0.1 HTTP origin이어야 합니다.');
   }

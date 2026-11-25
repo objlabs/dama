@@ -60,12 +60,13 @@ export interface BindingInput { mcpId: string; policy: BindingPolicy }
 export interface Binding extends BindingInput { id: string; projectId: string; createdAt: string }
 export interface Activity { id: number; action: string; resourceId: string; name: string; createdAt: string }
 export interface Snapshot {
+  deploymentDomain: { domain: string; editable: boolean };
   projects: ProjectView[]; services: Service[]; mcps: McpServer[];
   bindings: Binding[]; events: Activity[]; buildJobs: BuildJobSummary[];
   capabilities: { deployment: boolean; mcpExecution: boolean; authentication: boolean };
 }
 export interface NginxRoute { projectId: string; routeSegment?: string; upstreamPort: number }
-export interface NginxManifest { routes: NginxRoute[]; tls?: { certificate?: string; privateKey?: string } }
+export interface NginxManifest { routes: NginxRoute[]; domain?: string; tls?: { certificate?: string; privateKey?: string } }
 export type BuildStatus = 'queued' | 'running' | 'deployed' | 'failed';
 export interface BuildJobSummary {
   id: string; serviceId: string; commitSha: string; createdAt: string;

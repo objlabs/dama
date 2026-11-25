@@ -28,22 +28,22 @@ VM에 고정된 LAN 주소를 배정하고 기존 HTTPS 트래픽을 VM의 Nginx
 Ubuntu 또는 Debian VM에 Dama 소스를 가져온 뒤 저장소 루트에서 설치 스크립트를 실행한다. win-acme 등에서 받은 기존 인증서를 사용하려면 VM의 한 디렉터리에 `fullchain.pem`과 `privkey.pem`을 준비한다.
 
 ```sh
-sudo bash scripts/install-linux-vm.sh --cert-dir /etc/ssl/dama
+sudo bash scripts/install-linux-vm.sh --domain apps.example.com --cert-dir /etc/ssl/dama
 ```
 
-VM에서 Certbot이 `/etc/letsencrypt/live/objlabs.team` 인증서를 관리하고 있으면 일일 갱신까지 함께 등록한다.
+VM에서 Certbot이 `/etc/letsencrypt/live/apps.example.com` 인증서를 관리하고 있으면 일일 갱신까지 함께 등록한다.
 
 ```sh
-sudo bash scripts/install-linux-vm.sh --certbot-renewal
+sudo bash scripts/install-linux-vm.sh --domain apps.example.com --certbot-renewal
 ```
 
 VM으로 발급과 갱신을 옮기려면 root 계정에 Route 53 DNS 검증 권한을 설정하고 아래 명령을 사용한다. Certbot이 요청하는 경우 운영자가 약관에 동의한다.
 
 ```sh
-sudo bash scripts/install-linux-vm.sh --route53 admin@example.com
+sudo bash scripts/install-linux-vm.sh --domain apps.example.com --route53 admin@example.com
 ```
 
-설치 스크립트는 누락된 패키지를 설치하고 Dama 전용 Node.js 26.13.1을 준비한다. 빌드·테스트와 서비스 설정 검증을 거쳐 관리 화면, HTTPS, 워커가 응답하면 부팅 자동 시작을 등록한다. `apps.objlabs.team`의 별도 Nginx 서버 블록을 만들며, 같은 호스트에 기존 설정이 있으면 설치를 중단한다. 공개 DNS와 Hyper-V 설정은 각 호스트에서 적용한다.
+설치 스크립트는 누락된 패키지를 설치하고 Dama 전용 Node.js 26.13.1을 준비한다. 빌드·테스트와 서비스 설정 검증을 거쳐 관리 화면, HTTPS, 워커가 응답하면 부팅 자동 시작을 등록한다. `apps.example.com`의 예시와 같이 입력한 도메인에 대한 Nginx 서버 블록을 만들며, 같은 호스트에 기존 설정이 있으면 설치를 중단한다. 공개 DNS와 Hyper-V 설정은 각 호스트에서 적용한다.
 
 ### 수동 설치 및 검증
 
@@ -54,7 +54,7 @@ cd /opt/dama
 npm ci && npm test
 ```
 
-시스템 사용자 `dama`가 없다면 `sudo useradd --system --user-group --home-dir /var/lib/dama --shell /usr/sbin/nologin dama`로 만든다. 기존 HTTPS 서버 블록의 Dama include와 인증서는 [배포 워커 실행](deployment-worker.md)에 따라 연결한다. 워커가 파일을 교체할 수 있도록 `/etc/nginx/dama`와 그 안의 `routes.conf`를 `dama` 사용자에게 쓰기 가능하게 설정한다. Nginx 본체 설정, 인증서·키와 helper는 관리자 소유로 유지한다. `DAMA_NGINX_PROBE`가 VM에서 직접 Nginx로 연결되도록 설정한다. 예를 들어 VM의 hosts 파일에서 `apps.objlabs.team`을 `127.0.0.1`로 연결하면 공개 DNS 설정을 유지하면서 VM 내부에서 HTTPS 검증을 수행할 수 있다.
+시스템 사용자 `dama`가 없다면 `sudo useradd --system --user-group --home-dir /var/lib/dama --shell /usr/sbin/nologin dama`로 만든다. 기존 HTTPS 서버 블록의 Dama include와 인증서는 [배포 워커 실행](deployment-worker.md)에 따라 연결한다. 워커가 파일을 교체할 수 있도록 `/etc/nginx/dama`와 그 안의 `routes.conf`를 `dama` 사용자에게 쓰기 가능하게 설정한다. Nginx 본체 설정, 인증서·키와 helper는 관리자 소유로 유지한다. `DAMA_NGINX_PROBE`가 VM에서 직접 Nginx로 연결되도록 설정한다. 예를 들어 VM의 hosts 파일에서 `apps.example.com`을 `127.0.0.1`로 연결하면 공개 DNS 설정을 유지하면서 VM 내부에서 HTTPS 검증을 수행할 수 있다.
 
 `/opt/dama`에서 실행 파일과 서비스 설정을 설치한다. 기존 `/etc/dama/dama.env`를 사용하는 경우 해당 설정을 확인하고 예시 환경 파일 복사 명령을 건너뛴다.
 

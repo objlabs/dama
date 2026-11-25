@@ -1,18 +1,25 @@
 import type { Address, NginxManifest } from './types.js';
-import { HttpError } from './validation.js';
+import { deploymentDomain, HttpError } from './validation.js';
 
-export const deploymentHost = 'apps.objlabs.team';
+export function configuredDeploymentDomain(): string {
+  if (process.env.DAMA_DEPLOYMENT_DOMAIN) return deploymentDomain(process.env.DAMA_DEPLOYMENT_DOMAIN);
+  // Older systemd installations recorded their HTTPS hostname in the probe URL.
+  if (process.env.DAMA_NGINX_CONFIG && process.env.DAMA_NGINX_PROBE?.startsWith('https://')) {
+    return deploymentDomain(new URL(process.env.DAMA_NGINX_PROBE).hostname);
+  }
+  return '';
+}
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export function projectAddress(id: string): Address {
+export function projectAddress(id: string, domain = ''): Address {
   if (!uuidPattern.test(id)) throw new HttpError(400, '프로젝트 UUID가 올바르지 않습니다.');
   const basePath = `/${id}`;
-  return { basePath, defaultUrl: `https://${deploymentHost}${basePath}/` };
+  return { basePath, defaultUrl: domain ? `https://${domain}${basePath}/` : '' };
 }
-export function serviceAddress(projectId: string, segment = ''): Address {
+export function serviceAddress(projectId: string, segment = '', domain = ''): Address {
   const project = projectAddress(projectId);
   if (segment && !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(segment)) throw new HttpError(400, '서비스 접속 경로가 올바르지 않습니다.');
   const basePath = project.basePath + (segment ? `/${segment}` : '');
-  return { basePath, defaultUrl: `https://${deploymentHost}${basePath}/` };
+  return { basePath, defaultUrl: domain ? `https://${domain}${basePath}/` : '' };
 }
 export function nginxLocations(routes: (NginxManifest['routes'][number] & { deploymentId?: string })[]): string {
   const ids = new Set();
@@ -47,6 +54,7 @@ export function nginxLocations(routes: (NginxManifest['routes'][number] & { depl
 }
 export function nginxConfig(manifest: NginxManifest, { bootstrap = false }: { bootstrap?: boolean } = {}): string {
   if (!Array.isArray(manifest.routes)) throw new Error('manifest.routes 배열이 필요합니다.');
+  const deploymentHost = deploymentDomain(manifest.domain ?? configuredDeploymentDomain());
   const locations = nginxLocations(manifest.routes);
   const challenge = `    location ^~ /.well-known/acme-challenge/ {
         root /var/www/dama-acme;
@@ -58,7 +66,7 @@ export function nginxConfig(manifest: NginxManifest, { bootstrap = false }: { bo
     server_name ${deploymentHost};
 ${challenge}
     location / {
-${bootstrap ? '        return 404;' : '        return 308 https://apps.objlabs.team$request_uri;'}
+${bootstrap ? '        return 404;' : `        return 308 https://${deploymentHost}$request_uri;`}
     }
 }`;
   if (bootstrap) return `# Dama: HTTP-only certificate bootstrap. Include inside nginx http {}.\n${http}\n`;

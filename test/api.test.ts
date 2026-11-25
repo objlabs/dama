@@ -31,7 +31,7 @@ const mcp = { name: 'logs', source: 'external', transport: 'streamable-http', en
 test('register projects and MCPs, bind, audit, reject duplicates, cascade connections', async t => {
   const { api } = await setup(t);
   const p = await api<ProjectView>('/api/projects', 'POST', project); assert.equal(p.status, 201);
-  assert.equal(p.body.defaultUrl, `https://apps.objlabs.team/${p.body.id}/`);
+  assert.equal(p.body.defaultUrl, '');
   assert.equal((await api<ProjectView>('/api/projects', 'POST', { ...project, name: 'WEBSITE', domain: '' })).status, 409);
   assert.equal((await api<ProjectView>('/api/projects', 'POST', { ...project, name: 'other' })).status, 409);
   const m = await api<McpServer>('/api/mcps', 'POST', mcp); assert.equal(m.status, 201); assert.equal(m.body.status, 'unverified');
@@ -153,7 +153,7 @@ test('monorepo services share a repository and container ports but own their rou
   const p = (await api<ProjectView>('/api/projects', 'POST', project)).body;
   const python = await api<Service>(`/api/projects/${p.id}/services`, 'POST', service);
   assert.equal(python.status, 201);
-  assert.equal(python.body.defaultUrl, `https://apps.objlabs.team/${p.id}/api/`);
+  assert.equal(python.body.defaultUrl, '');
   const rust = await api<Service>(`/api/projects/${p.id}/services`, 'POST', { ...service, name: 'rust', language: 'rust', routeSegment: 'tools' });
   assert.equal(rust.status, 201); assert.equal(rust.body.containerPort, 8000);
   const ts = await api<Service>(`/api/projects/${p.id}/services`, 'POST', { ...service, name: 'web', language: 'typescript', routeSegment: '' });
@@ -263,4 +263,27 @@ test('Nginx site drafts reject directive injection and remain separate from appl
   assert.equal(store.nginxBindAddress(), '127.0.0.1');
   assert.equal((await api('/api/nginx/sites?domain=localhost', 'DELETE')).status, 200);
   assert.deepEqual(store.nginxState().sites, []);
+});
+
+test('the local deployment domain is optional, persists, and updates existing project and service addresses', async t => {
+  const { api, database, store } = await setup(t);
+  const p = store.createProject(project);
+  const service = store.createService(p.id, {
+    name: 'api', kind: 'app', language: 'typescript', sourcePath: '.', dockerfile: 'Dockerfile',
+    buildContext: '.', containerPort: 3000, routeSegment: 'api', healthPath: '/health', watchPaths: []
+  });
+  const endpoint = '/api/settings/deployment-domain';
+  assert.deepEqual(store.snapshot().deploymentDomain, { domain: '', editable: true });
+  for (const domain of ['https://apps.example.test', 'apps.example.test:443', 'a.test; include ', '127.0.0.1']) {
+    assert.equal((await api(endpoint, 'PUT', { domain })).status, 400);
+  }
+  assert.deepEqual((await api(endpoint, 'PUT', { domain: 'Apps.Example.Test' })).body, { domain: 'apps.example.test' });
+  assert.equal(store.snapshot().projects[0].defaultUrl, `https://apps.example.test/${p.id}/`);
+  assert.equal((await api<DeploymentPlan>(`/api/services/${service.id}/deployment-plan`)).body.defaultUrl, `https://apps.example.test/${p.id}/api/`);
+  const reopened = createStore(database);
+  try { assert.equal(reopened.getDeploymentDomain(), 'apps.example.test'); }
+  finally { reopened.close(); }
+  assert.equal((await api(endpoint, 'PUT', { domain: '' })).status, 200);
+  assert.equal(store.getService(service.id).defaultUrl, '');
+  assert.equal(store.getService(service.id).basePath, `/${p.id}/api`);
 });

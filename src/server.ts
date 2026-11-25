@@ -50,6 +50,9 @@ export function createApp(store: Store, shared: ReturnType<typeof createSharedEn
       const route = new URL(req.url ?? '/', local);
       const { pathname: path } = route;
       if (req.method === 'GET' && path === '/api/state') return json(200, store.snapshot());
+      if (req.method === 'PUT' && path === '/api/settings/deployment-domain') {
+        return json(200, { domain: store.setDeploymentDomain((await readJson(req)).domain) });
+      }
       if (req.method === 'GET' && path === '/api/database-connections') {
         const legacy = await listDatabaseConnections();
         const projectId = route.searchParams.get('projectId');

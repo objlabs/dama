@@ -1,7 +1,7 @@
 import type { Snapshot, DeploymentPlan, Language, GitAuthSummary, DeployEnvironment, SharedKind, SharedResource, ForgejoStatus, ForgejoRepository, NginxState } from '../src/types.js';
 type EditorType = 'project' | 'service' | 'mcp' | 'binding' | 'git-auth';
 type View = 'overview' | 'projects' | 'services' | 'mcps' | 'connections' | 'activity' | 'shared';
-let state: Snapshot = { projects: [], services: [], mcps: [], bindings: [], events: [], buildJobs: [], capabilities: { deployment: false, mcpExecution: false, authentication: false } };
+let state: Snapshot = { deploymentDomain: { domain: '', editable: true }, projects: [], services: [], mcps: [], bindings: [], events: [], buildJobs: [], capabilities: { deployment: false, mcpExecution: false, authentication: false } };
 let view: View = 'overview';
 let editorType: EditorType = 'project';
 let editingServiceId = '';
@@ -61,7 +61,7 @@ function empty(icon: string, title: string, copy: string, type: EditorType | '',
 }
 function projectCards() {
   if (!state.projects.length) return empty('▦', '첫 프로젝트를 등록하세요', '운영 중인 앱이나 MCP 서버의 정보를 모아보세요.', 'project', '프로젝트 추가');
-  return `<div class="card-grid">${state.projects.map(p => `<article class="project-card"><div class="card-top"><span class="app-icon">${p.kind === 'mcp' ? '⌘' : '▦'}</span><span class="badge neutral">${state.buildJobs.some(job => job.active && state.services.some(service => service.id === job.serviceId && service.projectId === p.id)) ? '활성 배포 있음' : '미배포'}</span></div><h3>${escape(p.name)}</h3><p class="domain">${escape(p.domain || '커스텀 도메인 미설정')}</p><p class="default-address">기본 주소 · 배포 예정<small>${escape(p.defaultUrl)}</small></p><div class="project-meta"><span>${p.kind === 'mcp' ? 'MCP 서버' : '애플리케이션'}</span><span>⑂ ${escape(p.branch)}</span></div><div class="card-bottom"><span>서비스 ${state.services.filter(item => item.projectId === p.id).length}개</span><button class="text-button" data-open="service" data-project="${p.id}">＋ 서비스</button>${p.repository ? `<button class="text-button" data-open="git-auth" data-project="${p.id}">Git 인증${p.gitAuth ? ' ✓' : ''}</button>` : ''}<button class="text-button danger" data-delete="projects" data-id="${p.id}" data-name="${escape(p.name)}">삭제</button></div></article>`).join('')}</div>`;
+  return `<div class="card-grid">${state.projects.map(p => `<article class="project-card"><div class="card-top"><span class="app-icon">${p.kind === 'mcp' ? '⌘' : '▦'}</span><span class="badge neutral">${state.buildJobs.some(job => job.active && state.services.some(service => service.id === job.serviceId && service.projectId === p.id)) ? '활성 배포 있음' : '미배포'}</span></div><h3>${escape(p.name)}</h3><p class="domain">${escape(p.domain || '커스텀 도메인 미설정')}</p><p class="default-address">기본 주소 · 배포 예정<small>${escape(p.defaultUrl || '기본 배포 도메인 미설정')}</small></p><div class="project-meta"><span>${p.kind === 'mcp' ? 'MCP 서버' : '애플리케이션'}</span><span>⑂ ${escape(p.branch)}</span></div><div class="card-bottom"><span>서비스 ${state.services.filter(item => item.projectId === p.id).length}개</span><button class="text-button" data-open="service" data-project="${p.id}">＋ 서비스</button>${p.repository ? `<button class="text-button" data-open="git-auth" data-project="${p.id}">Git 인증${p.gitAuth ? ' ✓' : ''}</button>` : ''}<button class="text-button danger" data-delete="projects" data-id="${p.id}" data-name="${escape(p.name)}">삭제</button></div></article>`).join('')}</div>`;
 }
 
 const languageNames: Record<Language, string> = { python: 'Python', rust: 'Rust', typescript: 'TypeScript' };
@@ -158,7 +158,13 @@ async function changeForgejo(path: string, method: string, data?: unknown) {
   }
 }
 function nginxPanel() {
-  if (!nginx) return section('Nginx', '<p class="quiet">Nginx 상태를 확인하고 있습니다.</p>');
+  const domainSettings = state.deploymentDomain;
+  const defaultDomain = domainSettings.editable ? `<form id="deployment-domain-form" class="shared-form">
+    <label>기본 배포 도메인<input name="domain" value="${escape(domainSettings.domain)}" maxlength="253" placeholder="apps.example.com"></label>
+    <button class="button secondary" ${nginxBusy ? 'disabled' : ''}>기본 도메인 저장</button>
+    </form><p class="field-note">선택 항목입니다. 프로젝트 기본 주소에 사용합니다. 실제 서비스 연결은 아래 도메인에서 설정하세요.</p>`
+    : `<p class="field-note">기본 배포 도메인 · ${escape(domainSettings.domain || '설치 설정에서 지정')}</p>`;
+  if (!nginx) return section('Nginx', defaultDomain + '<p class="quiet">Nginx 상태를 확인하고 있습니다.</p>');
   const local = nginx.mode === 'docker';
   const selected = nginx.sites.find(site => site.domain === nginxEdit);
   const applied = nginx.applied;
@@ -220,6 +226,7 @@ function nginxPanel() {
     </div>
     ${nginxMessage ? `<pre class="field-note nginx-output" role="status">${escape(nginxMessage)}</pre>` : ''}
     ${bindingForm}
+    ${defaultDomain}
     <h3>도메인</h3>
     ${local ? `<p class="field-note">${lanEnabled ? '다른 기기에서 쓸 서비스 이름을 도메인으로 등록하세요.' : 'localhost를 쓰거나 DNS·hosts에서 도메인을 이 Mac의 127.0.0.1에 연결하세요.'}</p>` : ''}
     <form id="nginx-site-form" class="shared-form">
@@ -309,9 +316,18 @@ document.addEventListener('change', event => {
 });
 document.addEventListener('submit', event => {
   const form = event.target;
-  if (!(form instanceof HTMLFormElement) || !['nginx-site-form','nginx-certificate-form','nginx-binding-form'].includes(form.id)) return;
+  if (!(form instanceof HTMLFormElement) || !['nginx-site-form','nginx-certificate-form','nginx-binding-form','deployment-domain-form'].includes(form.id)) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form));
+  if (form.id === 'deployment-domain-form') {
+    const input = form.querySelector<HTMLInputElement>('[name=domain]')!;
+    const button = form.querySelector('button')!;
+    button.disabled = true;
+    void request('/api/settings/deployment-domain', 'PUT', { domain: input.value.trim() })
+      .then(() => { nginxMessage = '기본 배포 도메인을 저장했습니다.'; return refresh(); })
+      .catch(showError).finally(() => { button.disabled = false; });
+    return;
+  }
   if (form.id === 'nginx-binding-form') {
     const address = data.address;
     if (!address || address === nginx?.bindAddress) return;

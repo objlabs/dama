@@ -4,6 +4,13 @@ export class HttpError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 export function fail(message: string): never { throw new HttpError(400, message); }
+export function deploymentDomain(value: unknown, optional = false): string {
+  const domain = text(value, '기본 배포 도메인', 253, optional).toLowerCase();
+  if (!domain && optional) return '';
+  if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(domain) ||
+      /^[\d.]+$/.test(domain)) fail('기본 배포 도메인에는 DNS 호스트 이름만 입력하세요.');
+  return domain;
+}
 export function commitSha(value: unknown): string {
   if (typeof value !== 'string' || !/^[a-f0-9]{40}$/i.test(value) || /^0{40}$/.test(value)) fail('전체 Git 커밋 SHA(40자리)를 입력하세요.');
   return value.toLowerCase();

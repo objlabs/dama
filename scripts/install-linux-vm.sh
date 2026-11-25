@@ -6,10 +6,12 @@ usage() {
     cat <<'HELP'
 Usage: sudo bash scripts/install-linux-vm.sh [options]
 
-Install Dama on a Debian or Ubuntu systemd VM for apps.objlabs.team.
+Install Dama on a Debian or Ubuntu systemd VM.
+  --domain HOST         Public deployment hostname. Prompted if omitted.
   --cert-dir PATH       Use fullchain.pem and privkey.pem from PATH
-                        (default /etc/letsencrypt/live/objlabs.team).
-  --route53 EMAIL       Issue the wildcard certificate if needed, then
+                        (default /etc/letsencrypt/live/HOST).
+  --prebuilt DIR        Install a packaged Dama build from DIR.
+  --route53 EMAIL       Issue the domain certificate if needed, then
                         enable daily renewal. Requires root Route 53 credentials.
   --certbot-renewal     Enable daily renewal for an existing Certbot certificate.
   --accept-acme-terms   Accept ACME terms and issue without interactive prompts.
@@ -21,7 +23,9 @@ HELP
 fail() { printf 'Dama installer: %s\n' "$*" >&2; exit 1; }
 log() { printf '\n[Dama] %s\n' "$*"; }
 
-cert_dir=/etc/letsencrypt/live/objlabs.team
+cert_dir=
+prebuilt=
+host=
 route53_email=
 renew=false
 nginx_admin_only=false
@@ -29,9 +33,19 @@ acme_arguments=()
 while (($#)); do
     case "$1" in
         --help|-h) usage; exit 0 ;;
+        --domain)
+            (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail '--domain requires a hostname.'
+            host=$2
+            shift 2
+            ;;
         --cert-dir)
             (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail '--cert-dir requires an absolute directory.'
             cert_dir=${2%/}
+            shift 2
+            ;;
+        --prebuilt)
+            (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail '--prebuilt requires a directory.'
+            prebuilt=$2
             shift 2
             ;;
         --route53)
@@ -47,18 +61,39 @@ while (($#)); do
     esac
 done
 
-[[ "$cert_dir" =~ ^/[A-Za-z0-9_./-]+$ ]] || fail 'Use an absolute certificate directory without spaces.'
-if [[ -n "$route53_email" && "$cert_dir" != /etc/letsencrypt/live/objlabs.team ]]; then
-    fail '--route53 uses /etc/letsencrypt/live/objlabs.team.'
-fi
-if "$renew"; then
-    [[ "$cert_dir" =~ ^/etc/letsencrypt/live/[A-Za-z0-9._-]+$ ]] || fail 'Renewal requires a Certbot live certificate directory.'
-fi
-
 [[ "$(uname -s)" == Linux && -d /run/systemd/system ]] || fail 'Run this inside the Debian/Ubuntu systemd VM.'
 [[ $EUID == 0 ]] || fail 'Run with sudo. The installer registers system services.'
 . /etc/os-release
 [[ "$ID" == debian || "$ID" == ubuntu ]] || fail 'Supported distributions are Debian and Ubuntu.'
+
+if "$nginx_admin_only" && [[ -r /etc/dama/dama.env ]]; then
+    active_host=$(sed -n -E 's/^DAMA_DEPLOYMENT_DOMAIN=([A-Za-z0-9.-]+)$/\1/p' /etc/dama/dama.env)
+    if [[ -z "$active_host" ]]; then
+        active_host=$(sed -n -E 's!^DAMA_NGINX_PROBE=https://([A-Za-z0-9.-]+)/?$!\1!p' /etc/dama/dama.env)
+    fi
+    if [[ -n "$host" && -n "$active_host" && "${host,,}" != "${active_host,,}" ]]; then
+        fail 'The supplied domain differs from the installed Nginx deployment domain.'
+    fi
+    host=${host:-$active_host}
+    if [[ -z "$cert_dir" && -r /etc/nginx/conf.d/dama-apps.conf ]]; then
+        cert_dir=$(sed -n -E 's!^[[:space:]]*ssl_certificate[[:space:]]+(/[^; ]+)/fullchain\.pem;[[:space:]]*$!\1!p' /etc/nginx/conf.d/dama-apps.conf | head -n 1)
+    fi
+fi
+if [[ -z "$host" ]]; then
+    [[ -t 0 ]] || fail 'Specify --domain HOST for noninteractive installation.'
+    read -r -p 'Deployment domain (example: apps.example.com): ' host
+fi
+host=${host,,}
+label='[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?'
+[[ ${#host} -le 253 && $host =~ ^($label\.)+$label$ && ! $host =~ ^[0-9.]+$ ]] || fail 'Enter a DNS hostname without a scheme, port, or path.'
+cert_dir=${cert_dir:-/etc/letsencrypt/live/$host}
+[[ "$cert_dir" =~ ^/[A-Za-z0-9_./-]+$ ]] || fail 'Use an absolute certificate directory without spaces.'
+if [[ -n "$route53_email" && "$cert_dir" != "/etc/letsencrypt/live/$host" ]]; then
+    fail "--route53 uses /etc/letsencrypt/live/$host."
+fi
+if "$renew"; then
+    [[ "$cert_dir" =~ ^/etc/letsencrypt/live/[A-Za-z0-9._-]+$ ]] || fail 'Renewal requires a Certbot live certificate directory.'
+fi
 
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 templates="$source_dir/deploy/systemd"
@@ -131,7 +166,6 @@ case "$(uname -m)" in
     *) fail 'Supported VM architectures are x86_64 and arm64.' ;;
 esac
 node_root="/opt/dama/runtime/node-v$node_version"
-host=apps.objlabs.team
 site=/etc/nginx/conf.d/dama-apps.conf
 hosts_line="127.0.0.1 $host # Dama installer"
 
@@ -216,24 +250,37 @@ fi
 
 chmod 0755 "$scratch"
 mkdir "$scratch/build"
-cp -R -- "$source_dir/src" "$source_dir/public" "$source_dir/scripts" "$source_dir/test" "$scratch/build/"
-cp -- "$source_dir/package.json" "$source_dir/package-lock.json" "$source_dir"/tsconfig*.json "$scratch/build/"
-chown -R dama:dama "$scratch/build"
-runuser -u dama -- env HOME="$scratch/build" PATH="$node_root/bin:/usr/bin:/bin" bash -c '
-    cd "$1" && npm ci --ignore-scripts && npm test
-' bash "$scratch/build"
+if [[ -n "$prebuilt" ]]; then
+    [[ -f "$prebuilt/src/server.js" && -f "$prebuilt/src/run-deployments.js" && -f "$prebuilt/public/app.js" ]] ||
+        fail 'The packaged Dama build is incomplete.'
+    cp -R -- "$prebuilt" "$scratch/build/dist"
+    cp -- "$source_dir/package.json" "$scratch/build/"
+    "$node_root/bin/node" --check "$scratch/build/dist/src/server.js"
+else
+    cp -R -- "$source_dir/src" "$source_dir/public" "$source_dir/scripts" "$source_dir/test" "$scratch/build/"
+    cp -- "$source_dir/package.json" "$source_dir/package-lock.json" "$source_dir"/tsconfig*.json "$scratch/build/"
+    chown -R dama:dama "$scratch/build"
+    runuser -u dama -- env HOME="$scratch/build" PATH="$node_root/bin:/usr/bin:/bin" bash -c '
+        cd "$1" && npm ci --ignore-scripts && npm test
+    ' bash "$scratch/build"
+fi
 
 log 'Check Nginx ownership and certificate'
 /usr/sbin/nginx -T > "$scratch/nginx-config"
 if [[ ! -e "$site" ]] &&
-    tr '\n' ' ' < "$scratch/nginx-config" | grep -Eq 'server_name[[:space:]]+([^;]*[[:space:]])?apps\.objlabs\.team([[:space:]]|;)'; then
+    awk -v host="$host" 'BEGIN { RS=";" } {
+        for (i=1; i<NF; i++) if ($i=="server_name")
+            for (j=i+1; j<=NF; j++) if (tolower($j)==host) found=1
+    } END { exit !found }' "$scratch/nginx-config"; then
     fail "An existing Nginx server already owns $host. Use the guide to connect it."
 fi
 if [[ -n "$route53_email" && ( ! -s "$cert_dir/fullchain.pem" || ! -s "$cert_dir/privkey.pem" ) ]]; then
-    certbot certonly --dns-route53 --cert-name objlabs.team --email "$route53_email" -d '*.objlabs.team' "${acme_arguments[@]}"
+    certbot certonly --dns-route53 --cert-name "$host" --email "$route53_email" -d "$host" "${acme_arguments[@]}"
 fi
 [[ -s "$cert_dir/fullchain.pem" && -s "$cert_dir/privkey.pem" ]] || fail "Certificate and key required in $cert_dir. See --route53."
-openssl x509 -in "$cert_dir/fullchain.pem" -noout -checkend 0 -checkhost "$host"
+openssl x509 -in "$cert_dir/fullchain.pem" -noout -checkend 0
+match=$(openssl x509 -in "$cert_dir/fullchain.pem" -noout -checkhost "$host")
+[[ "$match" == *' does match certificate' ]] || fail "The certificate does not cover $host."
 
 log 'Register Dama and verify service configuration'
 install -d -m 0755 /etc/dama /usr/local/libexec/dama /etc/systemd/system/nginx.service.d /var/www/dama-acme
@@ -242,7 +289,9 @@ if [[ ! -e /etc/nginx/dama/routes.conf ]]; then
     install -o dama -g dama -m 0644 /dev/null /etc/nginx/dama/routes.conf
 fi
 runuser -u dama -- test -w /etc/nginx/dama/routes.conf
-install_config 0644 "$templates/dama.env.example" /etc/dama/dama.env
+cat "$templates/dama.env.example" > "$scratch/dama.env"
+printf 'DAMA_DEPLOYMENT_DOMAIN=%s\nDAMA_NGINX_PROBE=https://%s\n' "$host" "$host" >> "$scratch/dama.env"
+install_config 0644 "$scratch/dama.env" /etc/dama/dama.env
 install_config 0755 "$templates/nginx" /usr/local/libexec/dama/nginx
 visudo -cf "$templates/dama-nginx.sudoers"
 install_config 0440 "$templates/dama-nginx.sudoers" /etc/sudoers.d/dama-nginx
@@ -267,7 +316,7 @@ if [[ -e /opt/dama/current && ! -L /opt/dama/current ]]; then fail '/opt/dama/cu
 ln -s "$release" "$release/current-next"
 mv -Tf "$release/current-next" /opt/dama/current
 
-sed -e "s|@CERTIFICATE@|$cert_dir/fullchain.pem|" -e "s|@PRIVATE_KEY@|$cert_dir/privkey.pem|" \
+sed -e "s|@DOMAIN@|$host|g" -e "s|@CERTIFICATE@|$cert_dir/fullchain.pem|" -e "s|@PRIVATE_KEY@|$cert_dir/privkey.pem|" \
     "$templates/dama-site.conf.example" > "$scratch/dama-apps.conf"
 [[ -e "$site" || -L "$site" ]] || site_added=true
 install_config 0644 "$scratch/dama-apps.conf" "$site"
